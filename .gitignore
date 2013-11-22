@@ -11,4 +11,7 @@ install/configure.msg
 install/make_blas.inc
 install/make_lapack.inc
 install/make_wannier90.sys
-
+*.o
+*.mod
+*.x
+*.a

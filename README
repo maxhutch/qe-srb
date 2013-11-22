@@ -1,7 +1,80 @@
+This is the Shirley Reduced Basis (SRB) version of Quantum Espresso.
+The SRB is reduced order model for PWDFT that coarsely samples the BZ.
+To use the SRB, add this namelist to your input files:
+ &srb
+  use_srb = .true.
+ /
+You also need to define Q_POINTS (and re-define K_POINTS).  The Q_POINTS
+should be your old K_POINTS.  The K_POINTS are the sparse BZ sample
+used to build the basis (+ periodic mirrors specified by ntrans)  For
+3D bulk systems, start with:
+ K_POINTS crystal
+  7
+  0.0 0.0 0.0 1.0
+  0.5 0.0 0.0 1.0
+  0.0 0.5 0.0 1.0
+  0.0 0.0 0.5 1.0
+  0.0 0.5 0.5 1.0
+  0.5 0.5 0.0 1.0
+  0.5 0.0 0.5 1.0
+
+For 2D sheets in the x-y plane:
+ K_POINTS crystal
+  7
+  0.0  0.0  0.0 1.0
+  0.25 0.0  0.0 1.0 
+  0.5  0.0  0.0 1.0 
+  0.75 0.0  0.0 1.0 
+  0.0  0.25 0.0 1.0 
+  0.0  0.5  0.0 1.0 
+  0.0  0.75 0.0 1.0 
+
+These can be tweaked based on the physics of the system.
+
+There are additional optional parameters:
+ * basis_life (int) sets the number of SCF iterations each basis is
+   used for.
+   * Default: 1
+   * Recommended: 3
+ * ntrans(1:3) (int) defines the number of periodic mirrors of the
+   unit BZ, [0:1]^3, in which to translate k-points.
+   * Default: 1
+   * Recommended: ntrans(i) = 0 for i without kpoints, e.g. i=3 for x-y sheet
+ * trace_tol (double) defines the smallest variance to include in the basis.
+   Negative values are treated as zero.
+   * Default: 1.D-7
+   * Recommended: 1.D-7
+ * max_basis_size (int) puts an upper limit on the size of the basis.
+   Negative values are treated as infinity.
+   * Default: -1
+   * Recommended: -1 (use trace_tol instead)
+ * rho_reduced (logical) specifies the use of the dense, reduced density
+   matrix method, which faster when 4*nbnd*nq > nbasis
+   * Default: .true.
+   * Recommended: .true.
+ * proj_tol (double) defines the smallest variance to include in the auxillary
+   basis, which is used for species with more than 4 atoms.
+   * Default: 3.D-3
+   * Recommended: 3.D-3
+ * freeze_basis (double) defines the energy convergence at which to stop
+   updating the basis.  Negative values signal to use sqrt(conv_thr)
+   * Default: -1
+   * Recommended: -1
+ * srb_debug (logical) specifies the inclusion of debugging checks, mostly
+   in the procedure to build the basis
+   * Default: .false.
+   * Recommended: .false.
+ * use_cuda (logical) specifies the use of GPU accelerated routines
+   * Default: .false.
+   * Recommended: .true. if you have GPU's in your system
+
+----
+
 This is the distribution of the Quantum ESPRESSO suite of codes (ESPRESSO: 
 opEn-Source Package for Research in Electronic Structure, Simulation, 
 and Optimization), promoted by the IOM-DEMOCRITOS National Simulation Center 
 of the Italian CNR (http://www.democritos.it). 
+
 
 Quick installation instructions for the impatient:
    ./configure [options]
