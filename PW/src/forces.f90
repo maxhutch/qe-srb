@@ -49,6 +49,7 @@ SUBROUTINE forces()
   USE martyna_tuckerman, ONLY: do_comp_mt, wg_corr_force
   USE london_module, ONLY : force_london
   USE xdm_module,    ONLY : force_xdm
+  USE input_parameters, ONLY : use_srb
   !
   IMPLICIT NONE
   !
@@ -87,7 +88,11 @@ SUBROUTINE forces()
   !
   ! ... The nonlocal contribution is computed here
   !
-  CALL force_us( forcenl )
+  IF (use_srb) THEN
+    CALL force_us_srb( forcenl )
+  ELSE
+    CALL force_us( forcenl )
+  ENDIF
   !
   ! ... The local contribution
   !

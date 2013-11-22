@@ -1,18 +1,16 @@
+!----------------------------------------------------------------------------
+SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
+!----------------------------------------------------------------------------
 !
+! Authors: Max Hutchinson, David Prendergast, PWSCF
 ! 
+! ... calculates the symmetrized charge density using a srb interpolation scheme 
+!
+!
 !#define SCUDA
 #define __SSDIAG
 #define DEBUG
-!
-!----------------------------------------------------------------------------
-SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
-  !----------------------------------------------------------------------------
-  !
-  ! Authors: Max Hutchinson, David Prendergast, PWSCF
-  ! 
-  ! ... calculates the symmetrized charge density using a srb interpolation scheme 
-  !
-  !
+
   USE ISO_C_BINDING,        ONLY : c_ptr, C_NULL_PTR
 
   USE kinds,                ONLY : DP
