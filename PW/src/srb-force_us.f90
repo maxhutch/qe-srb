@@ -293,10 +293,13 @@ SUBROUTINE force_us_srb( forcenl )
             if (MOD(ik-1, nproc_pool) == me_pool) then
               call get_buffer(becp%k, nkb*nbnd, bstates%file_unit, (ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
             endif
-            call mp_sum(becp%k, intra_pool_comm)
           else
-            becp%k = bstates%host_ar(:,:,ik+(s-1)*qpoints%nred) ! memory leak
+            becp%k = cmplx(0.d0, kind=DP)
+            if (MOD(ik-1, nproc_pool) == me_pool) then
+              becp%k = bstates%host_ar(:,:,(ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1) ! memory leak
+            endif
           endif
+          call mp_sum(becp%k, intra_pool_comm)
           
           ! make the product d <beta|psi>/dR = <(d beta)/dR|psi>
           do ipol = 1, 3
