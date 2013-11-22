@@ -33,6 +33,8 @@ SUBROUTINE init_run()
   USE dfunct,             ONLY : newd
   USE esm,                ONLY : do_comp_esm, esm_ggen_2d
   USE mp_bands,           ONLY : intra_bgrp_comm
+  use input_parameters,   ONLY : use_srb
+  use srb,                ONLY : init_srb
   !
   IMPLICIT NONE
   !
@@ -109,6 +111,8 @@ SUBROUTINE init_run()
 #endif
   !
   IF ( lmd ) CALL allocate_dyn_vars()
+  !
+  if (use_srb) call init_srb()
   !
   CALL stop_clock( 'init_run' )
   !

@@ -1124,6 +1124,37 @@ MODULE read_namelists_module
      !
      !=----------------------------------------------------------------------------=!
      !
+     !  Broadcast variables values for Namelist SHIRLEY
+     !
+     !=----------------------------------------------------------------------------=!
+     !
+     !----------------------------------------------------------------------
+     SUBROUTINE srb_bcast()
+       !----------------------------------------------------------------------
+       !
+       USE io_global, ONLY: ionode_id
+       USE mp,        ONLY: mp_bcast
+       USE mp_images, ONLY : intra_image_comm
+       !
+       IMPLICIT NONE
+       !
+       !
+       CALL mp_bcast( use_srb, ionode_id, intra_image_comm )
+       CALL mp_bcast( rho_reduced, ionode_id, intra_image_comm  )
+       CALL mp_bcast( ntrans, ionode_id, intra_image_comm  )
+       CALL mp_bcast( basis_life, ionode_id, intra_image_comm  )
+       CALL mp_bcast( freeze_basis, ionode_id, intra_image_comm  )
+       CALL mp_bcast( proj_tol, ionode_id, intra_image_comm  )
+       CALL mp_bcast( trace_tol, ionode_id, intra_image_comm  )
+       CALL mp_bcast( max_basis_size, ionode_id, intra_image_comm  )
+       CALL mp_bcast( srb_debug,ionode_id, intra_image_comm  )
+       CALL mp_bcast( use_cuda,ionode_id, intra_image_comm  )
+       RETURN
+       !
+     END SUBROUTINE
+     !
+     !=----------------------------------------------------------------------------=!
+     !
      !  Broadcast variables values for Namelist WANNIER_NEW
      !
      !=----------------------------------------------------------------------------=!
@@ -1886,6 +1917,21 @@ MODULE read_namelists_module
        !
        CALL wannier_bcast()
        CALL wannier_checkin( prog )
+       !
+       !
+       ! ... SRB NAMELIST
+       !
+       ios = 0
+       IF( ionode ) THEN
+          READ( unit_loc, srb, iostat = ios )
+       END IF
+       CALL mp_bcast( ios, ionode_id, intra_image_comm )
+       IF( ios /= 0 ) THEN
+          CALL errore( ' read_namelists ', &
+                     & ' reading namelist srb ', ABS(ios) )
+       END IF
+       !
+       CALL srb_bcast()
        !
        ! ... WANNIER_NEW NAMELIST
        !

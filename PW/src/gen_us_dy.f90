@@ -7,7 +7,7 @@
 !
 !
 !----------------------------------------------------------------------
-subroutine gen_us_dy (ik, u, dvkb)
+subroutine gen_us_dy (npw, igk, xk, u, dvkb)
   !----------------------------------------------------------------------
   !
   !  Calculates the kleinman-bylander pseudopotentials with the
@@ -18,9 +18,8 @@ subroutine gen_us_dy (ik, u, dvkb)
   USE constants,  ONLY : tpi
   USE ions_base,  ONLY : nat, ntyp => nsp, ityp, tau
   USE cell_base,  ONLY : tpiba
-  USE klist,      ONLY : xk
   USE gvect,      ONLY : mill, eigts1, eigts2, eigts3, g
-  USE wvfct,      ONLY : npw, npwx, igk
+  USE wvfct,      ONLY : npwx
   USE uspp,       ONLY : nkb, indv, nhtol, nhtolm
   USE us,         ONLY : nqx, tab, tab_d2y, dq, spline_ps
   USE splinelib
@@ -28,10 +27,10 @@ subroutine gen_us_dy (ik, u, dvkb)
   !
   implicit none
   !
-  integer :: ik
-  real(DP) :: u (3)
-
+  integer :: npw, igk(npw)
+  real(DP) :: xk(3), u (3)
   complex(DP) :: dvkb (npwx, nkb)
+
   integer :: na, nt, nb, ih, l, lm, ikb, iig, ipol, i0, i1, i2, &
        i3, ig
   real(DP), allocatable :: gk(:,:), q (:)
@@ -54,9 +53,9 @@ subroutine gen_us_dy (ik, u, dvkb)
   allocate ( q(npw) )
 
   do ig = 1, npw
-     gk (1, ig) = xk (1, ik) + g (1, igk (ig) )
-     gk (2, ig) = xk (2, ik) + g (2, igk (ig) )
-     gk (3, ig) = xk (3, ik) + g (3, igk (ig) )
+     gk (1, ig) = xk (1) + g (1, igk (ig) )
+     gk (2, ig) = xk (2) + g (2, igk (ig) )
+     gk (3, ig) = xk (3) + g (3, igk (ig) )
      q (ig) = gk(1, ig)**2 +  gk(2, ig)**2 + gk(3, ig)**2
   enddo
 
@@ -79,6 +78,7 @@ subroutine gen_us_dy (ik, u, dvkb)
     enddo
   endif
 
+  nqx = size(tab,1)
   do nt = 1, ntyp
      ! calculate beta in G-space using an interpolation table
      do nb = 1, upf(nt)%nbeta
@@ -95,6 +95,11 @@ subroutine gen_us_dy (ik, u, dvkb)
              i1 = i0 + 1
              i2 = i0 + 2
              i3 = i0 + 3
+             if( i3 > nqx ) then
+               vkb0 (ig,nb,nt) = 0.d0
+               cycle
+             endif
+
              vkb0 (ig, nb, nt) = tab (i0, nb, nt) * ux * vx * wx / 6.d0 + &
                                  tab (i1, nb, nt) * px * vx * wx / 2.d0 - &
                                  tab (i2, nb, nt) * px * ux * wx / 2.d0 + &
@@ -111,8 +116,8 @@ subroutine gen_us_dy (ik, u, dvkb)
   do nt = 1, ntyp
      do na = 1, nat
         if (ityp (na) .eq.nt) then
-           arg = (xk (1, ik) * tau (1, na) + xk (2, ik) * tau (2, na) &
-                + xk (3, ik) * tau (3, na) ) * tpi
+           arg = (xk (1) * tau (1, na) + xk (2) * tau (2, na) &
+                + xk (3) * tau (3, na) ) * tpi
            phase = CMPLX(cos (arg), - sin (arg) ,kind=DP)
            do ig = 1, npw
               iig = igk (ig)

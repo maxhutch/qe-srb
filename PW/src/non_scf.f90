@@ -13,6 +13,7 @@
   ! ... diagonalization of the KS hamiltonian in the non-scf case
   !
   USE kinds,                ONLY : DP
+  USE constants,            ONLY : rytoev
   USE bp,                   ONLY : lelfield, lberry, lorbm
   USE check_stop,           ONLY : stopped_by_user
   USE control_flags,        ONLY : io_level, conv_elec
@@ -22,15 +23,30 @@
   USE buffers,              ONLY : save_buffer
   USE klist,                ONLY : xk, wk, nks, nkstot
   USE lsda_mod,             ONLY : lsda, nspin
-  USE wvfct,                ONLY : nbnd, et, npwx
+  USE wvfct,                ONLY : nbnd, et, npwx, wg
+  use ener, only : eband
   USE wavefunctions_module, ONLY : evc
+  use cell_base, only : at
   !
   IMPLICIT NONE
   !
+  interface
+  SUBROUTINE weights(nks, nkstot, wk, xk, et, wg, eband)
+  USE kinds,                ONLY : DP
+  integer, intent(in) :: nks, nkstot
+  real(DP), intent(in) :: wk(:)
+  real(DP), intent(in) :: xk(:,:)
+  real(DP), intent(in) :: et(:,:)
+  real(DP), intent(out) :: wg(:,:)
+  real(DP), intent(out) :: eband
+  end subroutine weights
+  end interface
+  !
   ! ... local variables
   !
-  INTEGER :: iter, i
+  INTEGER :: iter, i, ik
   REAL(DP), EXTERNAL :: get_clock
+  character(255) :: fmtstr
   !
   !
   CALL start_clock( 'electrons' )
@@ -67,7 +83,7 @@
   ! ... calculate weights of Kohn-Sham orbitals 
   ! ... may be needed in further calculations such as phonon
   !
-  CALL weights  ( )
+  CALL weights (nks, nkstot, wk, xk, et, wg, eband )
   !
   ! ... Note that if you want to use more k-points for the phonon
   ! ... calculation then those needed for self-consistency, you can,
@@ -82,6 +98,12 @@
   !
   conv_elec = .true.
   CALL print_ks_energies ( ) 
+  open(unit=66, file="bands.dat")
+  write(fmtstr,'(a,i8,a)') '(i8,3e20.12,',nbnd,'e20.12)'
+  do ik = 1, nkstot
+    write(66,fmtstr) ik, matmul(transpose(at), xk(:,ik)), et(:,ik) * rytoev
+  enddo
+  close(66)
   !
   ! ... save converged wfc if they have not been written previously
   ! ... FIXME: it shouldn't be necessary to do this here

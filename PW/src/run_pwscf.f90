@@ -36,6 +36,9 @@ SUBROUTINE run_pwscf ( exit_status )
   USE mp_images,        ONLY : intra_image_comm
   USE qmmm,             ONLY : qmmm_initialization, qmmm_shutdown, &
                                qmmm_update_positions, qmmm_update_forces
+  USE scf,              ONLY : vrs
+  USE input_parameters, ONLY : use_srb
+  USE srb,              ONLY : srb_nscf
   !
   IMPLICIT NONE
   INTEGER, INTENT(OUT) :: exit_status
@@ -85,7 +88,11 @@ SUBROUTINE run_pwscf ( exit_status )
      ! ... electronic self-consistency or band structure calculation
      !
      IF ( .NOT. lscf) THEN
-        CALL non_scf ()
+       if (.not. use_srb) then
+         CALL non_scf ()
+       else
+         call srb_nscf( vrs )
+       end if
      ELSE
         CALL electrons()
      END IF

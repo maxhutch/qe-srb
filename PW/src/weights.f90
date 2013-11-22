@@ -7,33 +7,46 @@
 !
 !
 !----------------------------------------------------------------------------
-SUBROUTINE weights()
+SUBROUTINE weights(nks, nkstot, wk, xk, et, wg, demet)
   !----------------------------------------------------------------------------
   !
   ! ... calculates weights of Kohn-Sham orbitals used in calculation of rho,
   ! ... Fermi energies, HOMO and LUMO, "-TS" term (gaussian)
   !
   USE kinds,                ONLY : DP
-  USE ener,                 ONLY : demet, ef, ef_up, ef_dw
+  use constants, only : rytoev
+  USE ener,                 ONLY : ef, ef_up, ef_dw
   USE fixed_occ,            ONLY : f_inp, tfixed_occ
-  USE klist,                ONLY : lgauss, degauss, ngauss, nks, &
-                                   nkstot, wk, xk, nelec, nelup, neldw, &
+  USE klist,                ONLY : lgauss, degauss, ngauss,  &
+                                   nelec, nelup, neldw, &
                                    two_fermi_energies
   USE ktetra,               ONLY : ltetra, ntetra, tetra
   USE lsda_mod,             ONLY : nspin, current_spin, isk
-  USE wvfct,                ONLY : nbnd, wg, et
+  USE noncollin_module,     ONLY : bfield
   USE mp_images,            ONLY : intra_image_comm
   USE mp_pools,             ONLY : inter_pool_comm
+
   USE mp,                   ONLY : mp_bcast, mp_sum
   USE io_global,            ONLY : ionode, ionode_id
   !
   IMPLICIT NONE
   !
+  ! ... arguments
+  !
+  integer, intent(in) :: nks, nkstot
+  real(DP), intent(in) :: wk(:)
+  real(DP), intent(in) :: xk(:,:)
+  real(DP), intent(in) :: et(:,:)
+  real(DP), intent(out) :: wg(:,:)
+  real(DP), intent(out) :: demet
+  !
   ! ... local variables
   !
+  INTEGER :: nbnd ! number of bands
   INTEGER :: ibnd, ik ! counters: bands, k-points
   real (DP) demet_up, demet_dw
   !
+  nbnd = size(et, 1)
   demet         = 0.D0
   !
   IF ( tfixed_occ .OR. ltetra ) THEN
@@ -100,6 +113,8 @@ SUBROUTINE weights()
            !
            demet = demet_up + demet_dw
            !
+           bfield(3) = 0.5D0*( ef_up - ef_dw )
+           !
         ELSE
            !
            CALL gweights( nks, wk, nbnd, nelec, degauss, &
@@ -135,6 +150,10 @@ SUBROUTINE weights()
      CALL poolrecover( wg, nbnd, nkstot, nks )
      !
   END IF
+  !
+!  write(*,*) "fermi energy", ef*rytoev
+!  write(*,*) "sum weights", sum(wg)
+
   !
   RETURN
   !

@@ -15,9 +15,17 @@ SUBROUTINE addusdens(rho)
   USE noncollin_module,     ONLY : nspin_mag
   USE fft_base,             ONLY : dfftp
   USE kinds,                ONLY : DP
+  USE uspp,                 ONLY : becsum
   !
   IMPLICIT NONE
   !
+  interface
+    subroutine addusdens_g(bar, foo)
+      use kinds, only : DP
+      real(DP), intent(inout) :: bar(:,:,:)
+      real(DP), intent(inout) :: foo(:,:)
+    end subroutine addusdens_g
+  end interface
   !
   REAL(kind=dp), intent(inout) :: rho(dfftp%nnr,nspin_mag)
   !
@@ -27,7 +35,7 @@ SUBROUTINE addusdens(rho)
 #if defined(__CUDA) && !defined(__DISABLE_CUDA_ADDUSDENS)
      CALL addusdens_g_gpu(rho)
 #else
-     CALL addusdens_g(rho)
+     CALL addusdens_g(becsum, rho)
 #endif
   END IF
   !
@@ -36,7 +44,7 @@ SUBROUTINE addusdens(rho)
 END SUBROUTINE addusdens
 !
 !----------------------------------------------------------------------
-subroutine addusdens_g(rho)
+subroutine addusdens_g(becsum, rho)
   !----------------------------------------------------------------------
   !
   !  This routine adds to the charge density the part which is due to
@@ -49,14 +57,15 @@ subroutine addusdens_g(rho)
   USE gvect,                ONLY : ngm, nl, nlm, gg, g, &
                                    eigts1, eigts2, eigts3, mill
   USE noncollin_module,     ONLY : noncolin, nspin_mag
-  USE uspp,                 ONLY : becsum, okvan
+  USE uspp,                 ONLY : okvan
   USE uspp_param,           ONLY : upf, lmaxq, nh
   USE control_flags,        ONLY : gamma_only
   USE wavefunctions_module, ONLY : psic
   !
   implicit none
   !
-  REAL(kind=dp), intent(inout) :: rho(dfftp%nnr,nspin_mag)
+  real(DP), intent(inout) :: becsum(:,:,:)
+  REAL(kind=dp), intent(inout) :: rho(:,:)
   !
   !     here the local variables
   !
@@ -139,6 +148,7 @@ subroutine addusdens_g(rho)
   !     convert aux to real space and add to the charge density
   !
   do is = 1, nspin_mag
+  write(*,*) shape(rho(:,is)), shape(psic), dfftp%nnr
      psic(:) = (0.d0, 0.d0)
      psic( nl(:) ) = aux(:,is)
      if (gamma_only) psic( nlm(:) ) = CONJG(aux(:,is))

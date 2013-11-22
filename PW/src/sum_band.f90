@@ -50,6 +50,17 @@ SUBROUTINE sum_band()
   USE wvfct,                ONLY: nbnd
   !
   IMPLICIT NONE
+  interface
+     SUBROUTINE weights(nks, nkstot, wk, xk, et, wg, eband)
+        USE kinds,                ONLY : DP
+        integer, intent(in) :: nks, nkstot
+        real(DP), intent(in) :: wk(:)
+        real(DP), intent(in) :: xk(:,:)
+        real(DP), intent(in) :: et(:,:)
+        real(DP), intent(out) :: wg(:,:)
+        real(DP), intent(out) :: eband
+     end subroutine weights
+  end interface
   !
   ! ... local variables
   !
@@ -77,7 +88,7 @@ SUBROUTINE sum_band()
   !
   ! ... calculates weights of Kohn-Sham orbitals used in calculation of rho
   !
-  CALL weights ( )
+  CALL weights (nks, nkstot, wk, xk, et, wg, eband )
   !
   IF (one_atom_occupations) CALL new_evc()
   !

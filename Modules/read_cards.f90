@@ -87,6 +87,18 @@ CONTAINS
       k2       = 0
       k3       = 0
       !
+      ! ... q-points
+      !
+      q_points = 'none'
+      tq_inp   = .false.
+      nqstot   = 0
+      nq1      = 0
+      nq2      = 0
+      nq3      = 0
+      q1       = 0
+      q2       = 0
+      q3       = 0
+      !
       ! ... Electronic states
       !
       tf_inp = .false.
@@ -183,6 +195,10 @@ CONTAINS
          ELSE
             CALL card_kpoints( input_line )
          ENDIF
+         !
+      ELSEIF ( trim(card) == 'Q_POINTS' ) THEN
+         !
+         CALL card_qpoints( input_line )
          !
       ELSEIF ( trim(card) == 'OCCUPATIONS' ) THEN
          !
@@ -828,6 +844,149 @@ CONTAINS
       !
    END SUBROUTINE card_kpoints
    !
+   SUBROUTINE card_qpoints( input_line )
+      !
+      IMPLICIT NONE
+      !
+      CHARACTER(len=256) :: input_line
+      INTEGER            :: i, j
+      INTEGER            :: nqaux
+      INTEGER, ALLOCATABLE :: wqaux(:)
+      REAL(DP), ALLOCATABLE :: xqaux(:,:)
+      REAL(DP) :: delta, wq0
+      LOGICAL, EXTERNAL  :: matches
+      LOGICAL            :: tend,terr
+      LOGICAL            :: qband = .false.
+      !
+      !
+      IF ( tqpoints ) THEN
+         CALL errore( ' card_qpoints ', ' two occurrences', 2 )
+      ENDIF
+      !
+      IF ( matches( "NONE", input_line ) ) THEN
+         !  automatic generation of k-points
+         q_points = 'none'
+      ELSEIF ( matches( "AUTOMATIC", input_line ) ) THEN
+         !  automatic generation of k-points
+         q_points = 'automatic'
+      ELSEIF ( matches( "CRYSTAL", input_line ) ) THEN
+         !  input k-points are in crystal (reciprocal lattice) axis
+         q_points = 'crystal'
+         IF ( matches( "_B", input_line ) ) qband=.true.
+      ELSEIF ( matches( "TPIBA", input_line ) ) THEN
+         !  input k-points are in 2pi/a units
+         q_points = 'tpiba'
+         IF ( matches( "_B", input_line ) ) qband=.true.
+      ELSEIF ( matches( "GAMMA", input_line ) ) THEN
+         !  Only Gamma (k=0) is used
+         q_points = 'gamma'
+      ELSE
+         !  by default, input k-points are in 2pi/a units
+         q_points = 'tpiba'
+      ENDIF
+      !
+      IF ( q_points == 'automatic' ) THEN
+         !
+         ! ... automatic generation of k-points
+         !
+         nqstot = 0
+         CALL read_line( input_line, end_of_file = tend, error = terr )
+         IF (tend) GOTO 10
+         IF (terr) GOTO 20
+         READ(input_line, *, END=10, ERR=20) nq1, nq2, nq3, q1, q2, q3
+         IF ( q1 < 0 .or. q1 > 1 .or. &
+               q2 < 0 .or. q2 > 1 .or. &
+               q3 < 0 .or. q3 > 1 ) CALL errore &
+                  ('card_qpoints', 'invalid offsets: must be 0 or 1', 1)
+         IF ( nq1 <= 0 .or. nq2 <= 0 .or. nq3 <= 0 ) CALL errore &
+                  ('card_qpoints', 'invalid values for nq1, nq2, nq3', 1)
+         ALLOCATE ( xq(3,1), wq(1) ) ! prevents problems with debug flags
+         !                           ! when init_startk is called in iosys
+      ELSEIF ( ( q_points == 'tpiba' ) .or. ( q_points == 'crystal' ) ) THEN
+         !
+         ! ... input q-points are in 2pi/a units
+         !
+         CALL read_line( input_line, end_of_file = tend, error = terr )
+         IF (tend) GOTO 10
+         IF (terr) GOTO 20
+         READ(input_line, *, END=10, ERR=20) nqstot
+         !
+         IF (.NOT. qband) THEN
+            ALLOCATE ( xq(3, nqstot), wq(nqstot) )
+            DO i = 1, nqstot
+               CALL read_line( input_line, end_of_file = tend, error = terr )
+               IF (tend) GOTO 10
+               IF (terr) GOTO 20
+               READ(input_line,*, END=10, ERR=20) xq(1,i),xq(2,i),xq(3,i),wq(i)
+            ENDDO
+         ELSE
+            nqaux=nqstot
+            ALLOCATE(xqaux(3,nqstot), wqaux(nqstot))
+            DO i = 1, nqstot
+               CALL read_line( input_line, end_of_file = tend, error = terr )
+               IF (tend) GOTO 10
+               IF (terr) GOTO 20
+               READ(input_line,*, END=10, ERR=20) xqaux(1,i), xqaux(2,i), &
+                                                  xqaux(3,i), wq0
+               wqaux(i) = NINT ( wq0 ) ! beware: wkaux is integer
+            ENDDO
+            ! Count k-points first
+            nqstot=0
+            DO i=1,nqaux-1
+               IF ( wqaux(i) > 0 ) THEN
+                  nqstot=nqstot+wqaux(i)
+               ELSEIF ( wqaux(i) == 0 ) THEN
+                  nqstot=nqstot+1
+               ELSE
+                  CALL errore ('card_qpoints', 'wrong number of points',i)
+               ENDIF  
+            ENDDO
+            nqstot=nqstot+1
+            ALLOCATE ( xq(3,nqstot), wq(nqstot) )
+            ! Now fill the points
+            nqstot=0
+            DO i=1,nqaux-1
+               IF (wqaux(i)>0) THEN
+                  delta=1.0_DP/wqaux(i)
+                  DO j=0,wqaux(i)-1
+                     nqstot=nqstot+1
+                     xq(:,nqstot)=xqaux(:,i)+delta*j*(xqaux(:,i+1)-xqaux(:,i))
+                     wq(nqstot)=1.0_DP
+                  ENDDO
+               ELSEIF (wqaux(i)==0) THEN
+                  nqstot=nqstot+1
+                  xq(:,nqstot)=xqaux(:,i)
+                  wq(nqstot)=1.0_DP
+               ELSE
+                  CALL errore ('card_qpoints', 'wrong number of points',i)
+               ENDIF  
+            ENDDO
+            nqstot=nqstot+1
+            xq(:,nqstot)=xqaux(:,nqaux)
+            wq(nqstot)=1.0_DP
+            DEALLOCATE(xqaux)
+            DEALLOCATE(wqaux)
+         ENDIF
+         !
+      ELSEIF ( q_points == 'gamma' ) THEN
+         !
+         nqstot = 1
+         ALLOCATE ( xq(3,1), wq(1) )
+         xq(:,1) = 0.0_DP
+         wq(1) = 1.0_DP
+         !
+      ENDIF
+      !
+      tqpoints  = .true.
+      tq_inp = .true.
+      !
+      RETURN
+10     CALL errore ('card_qpoints', ' end of file while reading ' &
+            & // trim(q_points) // ' q points', 1)
+20     CALL errore ('card_kpoints', ' error while reading ' &
+            & // trim(q_points) // ' q points', 1)
+      !
+   END SUBROUTINE card_qpoints 
    !------------------------------------------------------------------------
    !    BEGIN manual
    !----------------------------------------------------------------------

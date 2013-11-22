@@ -1225,6 +1225,31 @@ MODULE input_parameters
                                dis_cutoff,exx_ps_rcut, exx_me_rcut, vnbsp,    &
                                maxwfdt, wf_q, wf_friction, nit, nsd, nsteps,  & 
                                tolw, adapt, calwf, nwf, wffort, writev
+
+!=----------------------------------------------------------------------------=!
+!  SRB Namelist Input Parameters
+!=----------------------------------------------------------------------------=!
+!
+        logical :: use_srb  = .false.
+        logical :: rho_reduced = .true.
+
+        integer :: ntrans(3) = (/1, 1, 1 /) ! do we want to interpolate in this dimension?
+        integer :: basis_life = 1
+
+        real(DP) :: proj_tol = 0.003 ! all proj's we've tried work with this 
+        real(DP) :: trace_tol = 1.d-7 ! negative values means no trucation
+        integer  :: max_basis_size = -1   ! negative values means no trucation
+        real(DP) :: freeze_basis = -1.d0 ! scf accuracy after which the basis stops changing
+
+        logical :: srb_debug = .false.
+        logical :: use_cuda = .false.
+
+        ! update this!
+        NAMELIST / srb / use_srb, rho_reduced, &
+                             ntrans, basis_life, freeze_basis, &
+                             proj_tol, trace_tol, max_basis_size, &
+                             use_cuda, srb_debug
+
 !===============================================================================
 !  END manual
 ! ----------------------------------------------------------------------
@@ -1271,6 +1296,7 @@ MODULE input_parameters
           ! in atomic mass units: 1 a.m.u. = 1822.9 a.u. = 1.6605 * 10^-27 kg
         LOGICAL   :: taspc = .false.
         LOGICAL   :: tkpoints = .false.
+        LOGICAL   :: tqpoints = .false.
         LOGICAL   :: tforces = .false.
         LOGICAL   :: tocc = .false.
         LOGICAL   :: tcell = .false.
@@ -1325,6 +1351,14 @@ MODULE input_parameters
           ! _b means that a band input is given. The weights is a integer
           !  number that gives the number of points between the present point
           !  and the next. The weight of the last point is not used.
+!
+!    QPOINTS
+!
+! ...   q-points inputs -- just like K-points but for when two lists are needed
+        LOGICAL :: tq_inp = .false.
+        REAL(DP), ALLOCATABLE :: xq(:,:), wq(:)
+        INTEGER :: nqstot = 0, nq1 = 0, nq2 = 0, nq3 = 0, q1 = 0, q2 = 0, q3 = 0
+        CHARACTER(len=80) :: q_points = 'gamma'
 !
 !    OCCUPATIONS
 !
@@ -1402,6 +1436,7 @@ SUBROUTINE reset_input_checks()
   !
   tapos = .false.
   tkpoints = .false.
+  tqpoints = .false.
   taspc = .false.
   twannier = .false.
   tconstr = .false.

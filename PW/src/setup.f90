@@ -81,6 +81,9 @@ SUBROUTINE setup()
   USE funct,              ONLY : dft_is_meta, dft_is_hybrid, dft_is_gradient
   USE paw_variables,      ONLY : okpaw
   USE cellmd,             ONLY : lmovecell  
+  USE kpoint,             ONLY : generate_k
+  USE srb,                ONLY : qpoints
+  use input_parameters,   ONLY : q_points, nq1, nq2, nq3, q1, q2, q3, nqstot, xq, wq, use_srb
   !
   IMPLICIT NONE
   !
@@ -418,9 +421,19 @@ SUBROUTINE setup()
         !
      ELSE
         !
-        CALL kpoint_grid ( nrot, time_reversal, skip_equivalence, s, t_rev, bg,&
-                           npk, k1,k2,k3, nk1,nk2,nk3, nkstot, xk, wk)
-        !
+        IF (.not. use_srb) THEN
+           !
+           CALL kpoint_grid ( nrot, time_reversal, skip_equivalence, s, t_rev, bg,&
+                              npk, k1,k2,k3, nk1,nk2,nk3, nkstot, xk, wk)
+           !
+        ELSE
+           !
+           ! We want the user to control the grid explicitly
+           ! 
+           CALL kpoint_grid ( 1, .FALSE., .TRUE., s, t_rev, bg,&
+                              npk, k1,k2,k3, nk1,nk2,nk3, nkstot, xk, wk)
+           !
+        ENDIF
      END IF
      !
   ELSE 
@@ -456,6 +469,10 @@ SUBROUTINE setup()
      END IF
   END IF
   !
+  call generate_k ( q_points, nq1, nq2, nq3, q1, q2, q3, &
+                    nrot, s, t_rev, at, bg, nqstot, xq, wq, qpoints )
+
+  !
   IF ( nat==0 ) THEN
      !
      nsym=nrot
@@ -477,8 +494,17 @@ SUBROUTINE setup()
   ! ... "irreducible_BZ" computes the missing k-points.
   !
   IF ( .NOT. lbands ) THEN
-     CALL irreducible_BZ (nrot, s, nsym, time_reversal, &
-                          magnetic_sym, at, bg, npk, nkstot, xk, wk, t_rev)
+     IF (.not. use_srb) THEN
+       CALL irreducible_BZ (nrot, s, nsym, time_reversal, &
+                            magnetic_sym, at, bg, npk, nkstot, xk, wk, t_rev)
+     ELSE
+       CALL cryst_to_cart(qpoints%nred,qpoints%xr,bg,1)
+       qpoints%wr(1:qpoints%nred) = qpoints%wr(1:qpoints%nred) / 2.
+       CALL irreducible_BZ (nrot, s, nsym, time_reversal, &
+                            magnetic_sym, at, bg, npk, qpoints%nred, qpoints%xr, qpoints%wr, t_rev)
+       qpoints%wr(1:qpoints%nred) = qpoints%wr(1:qpoints%nred) * 2.
+       CALL cryst_to_cart(qpoints%nred,qpoints%xr,at,-1)
+    ENDIF
   ELSE
      one = SUM (wk(1:nkstot))
      IF ( one > 0.0_dp ) wk(1:nkstot) = wk(1:nkstot) / one

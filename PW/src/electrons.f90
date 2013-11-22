@@ -319,8 +319,9 @@ SUBROUTINE electrons_scf ( no_printout )
   USE dfunct,               ONLY : newd
   USE esm,                  ONLY : do_comp_esm, esm_printpot
   USE iso_c_binding,        ONLY : c_int
-  !
-  
+  USE input_parameters,     ONLY : use_srb
+  use srb,                  ONLY : srb_scf
+  ! 
   IMPLICIT NONE
   !
   LOGICAL, INTENT (IN) :: no_printout
@@ -354,9 +355,10 @@ SUBROUTINE electrons_scf ( no_printout )
   ! ... external functions
   !
   REAL(DP), EXTERNAL :: ewald, get_clock
+  logical, save :: skip
   !
   iter = 0
-  dr2  = 0.0_dp
+  dr2  = 1.0_dp
   !
   ! ... Convergence threshold for iterative diagonalization
   ! ... for the first scf iteration of each ionic step (after the first),
@@ -453,17 +455,20 @@ SUBROUTINE electrons_scf ( no_printout )
         IF ( first ) tr2_min = ethr*MAX( 1.D0, nelec ) 
         !
         ! ... diagonalization of the KS hamiltonian
+        ! ... if the srb hasn't skipped it
         !
-        IF ( lelfield ) THEN
-           CALL c_bands_efield ( iter )
-        ELSE
-           CALL c_bands( iter )
-        END IF
-        !
-        IF ( stopped_by_user ) THEN
-           conv_elec=.FALSE.
-           CALL save_in_electrons (iter-1, dr2, et )
-           GO TO 10
+        IF (.not. skip .or. dr2 == 1.0_dp) THEN
+           IF ( lelfield ) THEN
+              CALL c_bands_efield ( iter )
+           ELSE
+             CALL c_bands( iter )
+           END IF
+           !
+           IF ( stopped_by_user ) THEN
+              conv_elec=.FALSE.
+              CALL save_in_electrons (iter-1, dr2, et )
+              GO TO 10
+           END IF
         END IF
         !
         ! ... xk, wk, isk, et, wg are distributed across pools;
@@ -473,16 +478,20 @@ SUBROUTINE electrons_scf ( no_printout )
         ! ... this is done here for et, in sum_band for wg
         !
         CALL poolrecover( et, nbnd, nkstot, nks )
-        !
-        ! ... the new density is computed here. For PAW:
-        ! ... sum_band computes new becsum (stored in uspp modules)
-        ! ... and a subtly different copy in rho%bec (scf module)
-        !
-        CALL sum_band()
-        !
-        ! ... the Harris-Weinert-Foulkes energy is computed here using only
-        ! ... quantities obtained from the input density
-        !
+        if (.not. use_srb) then
+           !
+           ! ... the new density is computed here. For PAW:
+           ! ... sum_band computes new becsum (stored in uspp modules)
+           ! ... and a subtly different copy in rho%bec (scf module)
+           !
+           CALL sum_band()
+           !
+           ! ... the Harris-Weinert-Foulkes energy is computed here using only
+           ! ... quantities obtained from the input density
+           !
+        else
+          call srb_scf(evc, vrs, rho, eband, demet, dr2, skip)
+        endif
         hwf_energy = eband + deband_hwf + (etxc - etxcc) + ewld + ehart + demet
         If ( okpaw ) hwf_energy = hwf_energy + epaw
         IF ( lda_plus_u ) hwf_energy = hwf_energy + eth
