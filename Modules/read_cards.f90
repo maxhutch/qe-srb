@@ -192,13 +192,17 @@ CONTAINS
          IF ( ( prog == 'CP' ) ) THEN
             IF( ionode ) &
                WRITE( stdout,'(A)') 'Warning: card '//trim(input_line)//' ignored'
+         ELSE IF (use_srb) THEN
+            CALL card_qpoints( input_line )
          ELSE
             CALL card_kpoints( input_line )
          ENDIF
          !
       ELSEIF ( trim(card) == 'Q_POINTS' ) THEN
          !
-         CALL card_qpoints( input_line )
+         IF (use_srb) THEN
+           CALL card_kpoints( input_line )
+         ENDIF
          !
       ELSEIF ( trim(card) == 'OCCUPATIONS' ) THEN
          !

@@ -4,11 +4,10 @@ To use the SRB, add this namelist to your input files:
  &srb
   use_srb = .true.
  /
-You also need to define Q_POINTS (and re-define K_POINTS).  The Q_POINTS
-should be your old K_POINTS.  The K_POINTS are the sparse BZ sample
+You also need to define Q_POINTS, which are the sparse BZ sample
 used to build the basis (+ periodic mirrors specified by ntrans)  For
 3D bulk systems, start with:
- K_POINTS crystal
+ Q_POINTS crystal
   7
   0.0 0.0 0.0 1.0
   0.5 0.0 0.0 1.0
@@ -19,7 +18,7 @@ used to build the basis (+ periodic mirrors specified by ntrans)  For
   0.5 0.0 0.5 1.0
 
 For 2D sheets in the x-y plane:
- K_POINTS crystal
+ Q_POINTS crystal
   7
   0.0  0.0  0.0 1.0
   0.25 0.0  0.0 1.0 
@@ -39,8 +38,10 @@ There are additional optional parameters:
  * ntrans(1:3) (int) defines the number of periodic mirrors of the
    unit BZ, [0:1]^3, in which to translate k-points.
    * Default: 1
-   * Recommended: ntrans(i) = 0 for i without kpoints, e.g. i=3 for x-y sheet
- * trace_tol (double) defines the smallest variance to include in the basis.
+   * Recommended: ntrans(i) = 0 for i without k-points, e.g. i=3 for x-y sheet
+ * trace_tol (double) defines largest tolerated error in the norm of the
+   overlap matrix composed of bands at the input q-points.  This is 
+   analogous to the maximum variance removed in principal component analysis.
    Negative values are treated as zero.
    * Default: 1.D-7
    * Recommended: 1.D-7
@@ -52,8 +53,9 @@ There are additional optional parameters:
    matrix method, which faster when 4*nbnd*nq > nbasis
    * Default: .true.
    * Recommended: .true.
- * proj_tol (double) defines the smallest variance to include in the auxillary
-   basis, which is used for species with more than 4 atoms.
+ * proj_tol (double) defines the largest tolerated error in the norm of the
+   overlap matrix composed of projectors at the input k-points.  Similar
+   to trace_tol, but for projectors and exact (no Shirley interpolation)
    * Default: 3.D-3
    * Recommended: 3.D-3
  * freeze_basis (double) defines the energy convergence at which to stop
