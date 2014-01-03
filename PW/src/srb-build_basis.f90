@@ -12,7 +12,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE srb_types, ONLY : basis, kmap
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
-  use srb_matrix, only : mydesc, block_inner
+  use srb_matrix, only : mydesc, block_inner, grab_desc
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -26,7 +26,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   use wavefunctions_module, only : psic
   USE fft_interfaces, only: fwfft, invfft
   use fft_types , only : fft_dlay_descriptor
-  use scalapack_mod, only : desc_re, desc_sq, myrow, mycol, nprow, npcol
   use scalapack_mod, only : scalapack_distrib, scalapack_distrib_re, scalapack_localindex, scalapack_diag, scalapack_svd
   use buffers, only : get_buffer
   use io_files, only : iunwfc, nwordwfc
@@ -317,55 +316,10 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! find local array sizes
   allocate(S_l(nbasis_lr, nbasis_lc), B_l(nbasis_lr, nbasis_lc), eigU(nbasis))
   S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
-#if 1
-#if 1
-  S_desc%desc = desc_sq
-  S_desc%myrow = myrow
-  S_desc%mycol = mycol
-  S_desc%nprow = nprow
-  S_desc%npcol = npcol
-  call block_inner(nbnd*nks, ngk_gamma, evc_all, npwx_tmp, evc_all, npwx_tmp, S_l, S_desc)
-#else
-  allocate(S_g2(nbnd, nbnd))
-  ! now the rest
-  do k2 = 1, nks
-   do k1 = 1, k2
-    call zgemm('C', 'N', nbnd, nbnd, ngk_gamma, one, &
-               evc_all(:,:,k1), npwx_tmp, &
-               evc_all(:,:,k2), npwx_tmp, zero, &
-               S_g2, nbnd)
-    call mp_sum(S_g2, intra_pool_comm)
-    do j = 1, nbnd
-     do i = 1, nbnd
-       if (k1 == k2 .and. i > j) cycle
-       call scalapack_localindex((k1-1)*nbnd + i, (k2-1)*nbnd + j, i_l, j_l, islocal)
-       if ( islocal ) S_l(i_l, j_l) = S_g2(i, j)
-     enddo
-    enddo
-   enddo
-  enddo
-  deallocate(S_g2)
-#endif
-#else
-  allocate(S_g2(nbasis, nbasis))
-  call zherk('U', 'C', nbasis, ngk_gamma, one, &
-             evc_all, npwx_tmp, zero, &
-             S_g2, nbasis)
 
-  call mp_sum(S_g2, intra_pool_comm)
-  do k2 = 1, nks
-   do j = 1, nbnd
-    do k1 = 1, k2
-     do i = 1, nbnd
-      if (k1 == k2 .and. i > j) cycle
-      call scalapack_localindex((k1-1)*nbnd + i, (k2-1)*nbnd + j, i_l, j_l, islocal)
-      if ( islocal ) S_l(i_l, j_l) = S_g2((k1-1)*nbnd + i, (k2-1)*nbnd + j)
-     enddo
-    enddo
-   enddo
-  enddo
-  deallocate(S_g2)
-#endif
+  call grab_desc(S_desc)
+  call block_inner(nbnd*nks, ngk_gamma, evc_all, npwx_tmp, evc_all, npwx_tmp, S_l, S_desc)
+
   call stop_clock('  make_S')
 
   !============================
@@ -376,12 +330,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   !============================
   ! Truncate it
   if (max_basis_size < 0) max_basis_size = HUGE(max_basis_size)
-#if 0
-  if (trace_tol < 0) then
-    trace_tol = 1.d0
-  endif
-  trace_tol = trace_tol * .1d0
-#endif
 #if 0
   open(unit=1234, file='vars', access='APPEND', status='replace')
   do i=1,nks*nbnd
@@ -424,7 +372,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
     enddo
   enddo
   call mp_sum(ztmp, intra_pool_comm) !THIS IS SO HORRIBLE!!!
-write(*,*) "Expanded"
+
   if (srb_debug) then
   if (me_pool == 0) then
   do i = 1, nbasis_trunc
@@ -442,7 +390,7 @@ write(*,*) "Expanded"
              evc_all, npwx_tmp, &
              ztmp, nbasis, zero, &
              opt_basis%elements, ngk_gamma)
-write(*,*) "transformed"
+
   deallocate(S_l)
   deallocate(B_l)
   deallocate(eigU)
@@ -457,7 +405,6 @@ write(*,*) "transformed"
     inv_norm = 1.d0 / sqrt(inv_norm)
     call zdscal(ngk_gamma, inv_norm, opt_basis%elements(:,i), 1)
   enddo
-write(*,*) "Normed"
   call stop_clock('  expand')
 
 #endif
@@ -510,7 +457,6 @@ write(*,*) "Normed"
   deallocate(ngk_orig, ngk_tmp, igk_gamma, igk_orig, igk_tmp)
   deallocate(g2kin_gamma, g2kin_orig, g2kin_tmp, igk_l2g_gamma, igk_l2g_orig, igk_l2g_tmp)
 
-write(*,*) "finished"
 END SUBROUTINE build_basis
 
 !==============================================================================

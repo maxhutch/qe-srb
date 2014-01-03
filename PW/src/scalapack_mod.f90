@@ -300,6 +300,11 @@
   integer,intent(out) :: nb
   integer,intent(in) :: nbpref, nr, nc, nprow, npcol
 
+  if (nprow == 0 .and. npcol == 0) then
+    nb = min(nr,nc)
+    return
+  endif
+
   nb = min (nr / nprow, nc / npcol)
   if (nbpref.gt.0) then
      nb = min (nb, nbpref)

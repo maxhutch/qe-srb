@@ -10,6 +10,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   USE mp, ONLY: mp_sum, mp_barrier
 
   USE srb_types, ONLY : basis, ham_expansion
+  USE srb_matrix, only : block_inner
   USE srb, ONLY : decomp_size
 
   USE cell_base, ONLY : tpiba2, tpiba
@@ -63,8 +64,8 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   ! allocate the hamiltonian (we didn't know the size until now)
   ham%length = opt_basis%length
   if (.not. saved) then
-    ALLOCATE(ham%con(opt_basis%length, opt_basis%length, nspin), ham%lin(3, opt_basis%length, opt_basis%length) )
-    allocate(ham%kin_con(opt_basis%length, opt_basis%length))
+    ALLOCATE(ham%con(ham%desc%nrl, ham%desc%ncl, nspin), ham%lin(3, ham%desc%nrl, ham%desc%ncl) )
+    allocate(ham%kin_con(ham%desc%nrl, ham%desc%ncl))
   endif
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma, ngm, g, ecut_srb/tpiba2, npw, igk, g2kin) ! re-order wrt |G+k| (k = 0 in this case)
@@ -81,19 +82,16 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     forall (s = 1:nspin) ham%con(:,:,s) = ham%kin_con(:,:)
   else
     call start_clock( '   part1' )
-    allocate(root(npw, 1), buffer(npw, nbnd))
+    allocate(buffer(npw, nbnd))
 
-    root(:,1) = sqrt(g2kin(1:npw))
-    forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * root(i,1)
+    forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g2kin(i)
 
-    call ZHERK('U', 'C', nbnd, npw, one, &
-               buffer, npw, zero, &
-               ham%con, nbnd)
+    call block_inner(nbnd, npw, opt_basis%elements, npw, buffer, npw, ham%con(:,:,1), ham%desc)
 
     if (nspin == 2) ham%con(:,:,2) = ham%con(:,:,1)
     ham%kin_con = ham%con(:,:,1)
 
-    deallocate(root, buffer)
+    deallocate(buffer)
     call stop_clock( '   part1' )
   endif
 

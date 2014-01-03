@@ -26,7 +26,8 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   USE lsda_mod,             only : nspin, isk
   use wvfct,                only : wg, et
 
-  USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list
+  USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list, kproblem
+  USE srb_matrix,       ONLY : grab_desc
   USE srb,              ONLY : qpoints, basis_life, freeze_basis
   USE srb,              ONLY : use_cuda, rho_reduced 
   use srb,              ONLY : states, bstates, wgq, red_basis=>scb, ets, pp=>spp
@@ -76,9 +77,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... local variables
   !
-  TYPE(ham_expansion), save :: ham !>!< Expansion of Hamiltonian wrt k
-  complex(DP), allocatable :: ham_matrix(:,:) !>!< Hamiltonian as dense matrix
-  complex(DP), allocatable :: S_matrix(:,:), S_matrix2(:,:) !>!< Overlap matrix and copy
+  TYPE(ham_expansion), save :: h_coeff !>!< Expansion of Hamiltonian wrt k
+  TYPE(kproblem)            :: Hk !>!< Hamiltonain at a specific kpoint
+  complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
   complex(DP), allocatable :: evecs(:,:) !>!< eigenvectors of Hamiltonian
   complex(DP), allocatable :: P(:,:,:), Pinv(:,:,:) !>!< Preconditioner and inverse
@@ -121,22 +122,14 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     basis_age = -1
     deallocate(red_basis%elements)
     if (allocated(red_basis%elem_rs)) deallocate(red_basis%elem_rs)
-    deallocate(ham%con, ham%lin, ham%kin_con)
+    deallocate(h_coeff%con, h_coeff%lin, h_coeff%kin_con)
     red_basis%length = -1
   endif
 
   call stop_clock(  ' other')
   if (basis_age == -1) then
     call start_clock( ' build_red_basis' )
-#ifdef SCUDA
-    if (use_cuda) then
-      call build_basis_cuda(evc, red_basis, ecut_srb)
-    else
-#endif
-      call build_basis(evc, red_basis, ecut_srb)
-#ifdef SCUDA
-    endif
-#endif
+    call build_basis(evc, red_basis, ecut_srb)
     call stop_clock( ' build_red_basis' )
   else
     if (me_image == 0) write(*,*) "Using a basis of length ", red_basis%length, " and age ", basis_age
@@ -147,30 +140,20 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... Construct the local Hamiltonian
   ! 
+  call scalapack_distrib(red_basis%length, red_basis%length, h_coeff%desc%nrl, h_coeff%desc%ncl)
+  call grab_desc(h_coeff%desc)
+
   call start_clock( ' build_h_coeff' )
-#ifdef SCUDA
-  if (use_cuda) then
-    call build_h_coeff_cuda(red_basis, V_rs(:,:), ecut_srb, nspin, ham, basis_age /= 0)
-  else
-#endif
-    call build_h_coeff(red_basis, V_rs(:,:), ecut_srb, nspin, ham, basis_age /= 0)
-#ifdef SCUDA
-  endif
-#endif
+  call build_h_coeff(red_basis, V_rs(:,:), ecut_srb, nspin, h_coeff, basis_age /= 0)
   call stop_clock( ' build_h_coeff' )
   call start_clock(  ' other')
+
 
   !
   ! ... Setup dense data structures
   !
-
-#ifdef __SSDIAG
-  i = red_basis%length; j = red_basis%length
-#else
-  call scalapack_distrib(red_basis%length, red_basis%length, i, j)
-#endif
-
-  allocate(ham_matrix(i, j))
+  Hk%desc = h_coeff%desc
+  allocate(Hk%H(Hk%desc%nrl, Hk%desc%ncl))
   allocate(evecs(red_basis%length, nbnd))
   if (allocated(energies)) deallocate(energies)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
@@ -179,12 +162,12 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   states%nk = qpoints%nred * nspin
   allocate(pp%projs(red_basis%length, nkb))
   if (okvan) then
-    allocate(S_matrix(i,j), S_matrix2(i,j))
+    allocate(Hk%S(Hk%desc%nrl,Hk%desc%ncl), S_matrix2(Hk%desc%nrl,Hk%desc%ncl))
     pp%us = .true.
     bstates%nk = qpoints%nred * nspin
   else
     bstates%nk = 0
-    allocate(S_matrix(1,1), S_matrix2(1,1))
+    allocate(Hk%S(1,1), S_matrix2(1,1))
   end if
 
   ! Swapping is controled by the disk_io input param
@@ -206,11 +189,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... Transform projectors
   !
-#ifdef SCUDA
-  if (use_cuda) then
-    call copy_pseudo_cuda(pp)
-  else
-#endif
   call stop_clock(  ' other')
   if (nkb > 0 .and. basis_age == 0) then
     call start_clock(' build_proj')
@@ -221,27 +199,15 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     endif
     call stop_clock(' build_proj')
   endif
-#ifdef SCUDA
-  endif
-#endif
+
 
   !
   ! ... main q-point loop
   !
   do q = 1+me_pool, qpoints%nred, nproc_pool
-
     !
     ! ... Build dense S matrix 
     !
-#ifdef SCUDA
-    if (use_cuda) then
-      call start_clock(' build_proj')
-      if (nkb > 0) then
-          call build_projs_cuda(red_basis, qpoints%xr(:,q), q, pp, S_matrix, basis_age /= 0)
-      endif
-      call stop_clock(' build_proj')
-    else
-#endif
     call start_clock(  ' other')
     if (nkb > 0) then
       call load_projs(q, pp)
@@ -251,15 +217,12 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     if (okvan) then
       CALL start_clock(' build_mat' )
       if (basis_age == 0) then
-        call build_s_matrix(pp, (1-q)/nproc_pool - 1, S_matrix)
+        call build_s_matrix(pp, (1-q)/nproc_pool - 1, Hk%S)
       else
-        call build_s_matrix(pp, (q-1)/nproc_pool + 1, S_matrix)
+        call build_s_matrix(pp, (q-1)/nproc_pool + 1, Hk%S)
       endif
       CALL stop_clock(' build_mat' )
     end if
-#ifdef SCUDA
-    endif
-#endif
 #ifdef DAVID
     ! allocate space for preconditioner
     if ((q-1)/nproc_pool == 0) then
@@ -271,21 +234,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 
     ! loop over spins (which share S matrices
     do s = 1, nspin
-#ifdef SCUDA
-      if (use_cuda) then
-        CALL start_clock( ' diagonalize' )
-        call solve_system_cuda(ham, qpoints%xr(:,q), pp, (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1, s, &
-                               states, &
-                               bstates, &
-                               energies(:,q+(s-1)*qpoints%nred))
-        CALL stop_clock( ' diagonalize' )
-      else
-#endif
         !
         ! ... Build dense Hamiltonian matrix
         !
         CALL start_clock(' build_mat' )
-        call build_h_matrix(ham, qpoints%xr(:,q), pp, s, ham_matrix)
+        call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk%H)
         CALL stop_clock(' build_mat' )
 
         ! 
@@ -295,7 +248,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 #ifdef DAVID
         ! invert preconditioner
         if ((q-1)/nproc_pool == 1) then
-          P(:,:,s) = ham_matrix 
+          P(:,:,s) = Hk%H 
           Pinv(:,:,s) = P(:,:,s) 
           call ZHETRF( 'U', red_basis%length, Pinv(:,:,s), red_basis%length, &
                       ipiv, work, 16*red_basis%length, i )
@@ -329,11 +282,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         endif
 #endif
         if (okvan) then
-          S_matrix2(:,:) = S_matrix(:,:)
-          call diagonalize(ham_matrix, energies(:,q+(s-1)*qpoints%nred), evecs, &
+          S_matrix2(:,:) = Hk%S(:,:)
+          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, &
                            nbnd, S_matrix2, meth_opt = meth)
         else
-          call diagonalize(ham_matrix, energies(:,q+(s-1)*qpoints%nred), evecs, &
+          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, &
                            nbnd, meth_opt = meth)
         end if
         CALL stop_clock( ' diagonalize' )
@@ -342,17 +295,13 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         ! ... Compute <\b|psi> and store it and <b|psi>
         !
         CALL start_clock( ' store' )
-        write(*,*) (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1
         call store_states(evecs, pp, (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1, states, bstates)
         CALL stop_clock( ' store' )
-#ifdef SCUDA
-      endif
-#endif
     enddo 
   enddo 
   call start_clock(  ' other')
   call mp_sum(energies, intra_pool_comm)
-  deallocate(ham_matrix, S_matrix, S_matrix2, pp%projs, evecs)
+  deallocate(Hk%H, Hk%S, S_matrix2, pp%projs, evecs)
 #ifdef DAVID
   deallocate(P, Pinv)
   deallocate(work, ipiv)

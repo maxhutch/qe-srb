@@ -6,9 +6,22 @@ module srb_matrix
     integer :: mycol
     integer :: nprow
     integer :: npcol
+    integer :: nrl
+    integer :: ncl
   end type mydesc
 
   contains
+
+  subroutine grab_desc(desc)
+    use scalapack_mod, only : myrow, mycol, nprow, npcol, desc_sq
+    implicit none
+    type(mydesc), intent(inout) :: desc
+    desc%desc = desc_sq
+    desc%myrow = myrow
+    desc%mycol = mycol
+    desc%nprow = nprow
+    desc%npcol = npcol
+  end subroutine grab_desc
 
 #define BLOCK 32
   subroutine block_inner(n, k, A, lda, B, ldb, C, C_desc)
@@ -23,7 +36,7 @@ module srb_matrix
     complex(DP),  intent(in)  :: A(*)
     complex(DP),  intent(in)  :: B(*)
     complex(DP),  intent(out) :: C(:,:)
-    type(mydesc), intent(in)  :: C_desc
+    type(mydesc), intent(in), optional :: C_desc
 
     integer :: i,j,blocki,blockj,ip,jp,i_l,j_l,prow,pcol
     complex(DP), allocatable :: Z(:,:)
