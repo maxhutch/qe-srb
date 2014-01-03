@@ -19,6 +19,7 @@ SUBROUTINE print_clock_pw()
    USE realus,             ONLY : real_space
    USE ldaU,               ONLY : lda_plus_U
    USE funct,              ONLY : dft_is_hybrid
+   use input_parameters,   ONLY : use_srb
 #ifdef __ENVIRON
    USE environ_base,       ONLY : do_environ
 #endif
@@ -223,6 +224,42 @@ SUBROUTINE print_clock_pw()
       ENDIF
    END IF
    !
+   IF ( use_srb ) THEN
+      write(stdout, *)
+      write(stdout, '(5X,"SHIRLEY routines")' )
+      call print_clock( 'srb' )
+      call print_clock( ' build_red_basis' )
+      call print_clock( '  mirrors' )
+      call print_clock( '  SVD' )
+      call print_clock( '  make_S' )
+      call print_clock( '  diag_S' )
+      call print_clock( '  expand' )
+      call print_clock( ' build_h_coeff' )
+      call print_clock( '  local_potential' )
+      call print_clock( '  Kinetic' )
+      call print_clock( '   part1' )
+      call print_clock( ' build_proj' )
+      call print_clock( '  make_vbas')
+      call print_clock( '  make_St')
+      call print_clock( '  make_vkb')
+      call print_clock( '  apply_S')
+      call print_clock( '  proj_init')
+      call print_clock( '  proj_gemm')
+      call print_clock( '  proj_load')
+      call print_clock( '  proj_save')
+      call print_clock( ' build_mat' )
+      call print_clock( ' diagonalize' )
+      call print_clock( ' store' )
+      call print_clock( ' build_rho' )
+      call print_clock( '  compact')
+      call print_clock( '  svd')
+      call print_clock( '  gemm')
+      call print_clock( '  fft')
+      call print_clock( '  acc')
+      call print_clock( '  addproj')
+      call print_clock( '  transpose')
+      call print_clock( ' other' )
+   ENDIF
 #ifdef __ENVIRON
    IF ( do_environ ) call environ_clock( stdout )
 #endif
