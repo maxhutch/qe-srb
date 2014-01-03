@@ -148,7 +148,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   call stop_clock( ' build_h_coeff' )
   call start_clock(  ' other')
 
-
   !
   ! ... Setup dense data structures
   !
@@ -217,9 +216,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     if (okvan) then
       CALL start_clock(' build_mat' )
       if (basis_age == 0) then
-        call build_s_matrix(pp, (1-q)/nproc_pool - 1, Hk%S)
+        call build_s_matrix(pp, (1-q)/nproc_pool - 1, Hk)
       else
-        call build_s_matrix(pp, (q-1)/nproc_pool + 1, Hk%S)
+        call build_s_matrix(pp, (q-1)/nproc_pool + 1, Hk)
       endif
       CALL stop_clock(' build_mat' )
     end if

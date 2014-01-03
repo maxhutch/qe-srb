@@ -200,12 +200,12 @@ MODULE srb
       type(pseudop), intent(inout) :: pp
     end subroutine load_projs
 
-    subroutine build_s_matrix(pp, q, S_matrix)
+    subroutine build_s_matrix(pp, q, Hk)
       USE kinds, ONLY : DP
-      USE srb_types, ONLY : pseudop
+      USE srb_types, ONLY : pseudop, kproblem
       type(pseudop), intent(inout) :: pp
       integer, intent(in) :: q
-      complex(DP), intent(out) :: S_matrix(:,:)
+      type(kproblem), intent(inout) :: Hk
     end subroutine build_s_matrix
 
     SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_opt, P, Pinv, btype_opt)

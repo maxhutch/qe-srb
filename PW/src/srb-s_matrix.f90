@@ -1,7 +1,7 @@
-subroutine build_s_matrix(pp, q, S_matrix)
+subroutine build_s_matrix(pp, q, Hk)
   USE kinds, ONLY : DP
 
-  use srb_types, only : pseudop
+  use srb_types, only : pseudop, kproblem
   USE uspp, only : nkb, qq
   use uspp_param, only : nh, nhm
   use ions_base, only : nat, ityp, nsp
@@ -10,9 +10,9 @@ subroutine build_s_matrix(pp, q, S_matrix)
 
   IMPLICIT NONE
 
-  type(pseudop), intent(inout) :: pp
-  integer,       intent(in)    :: q
-  complex(DP),   intent(out)   :: S_matrix(:,:)
+  type(pseudop),  intent(inout) :: pp
+  integer,        intent(in)    :: q
+  type(kproblem), intent(inout)   :: Hk
   ! locals
   complex(DP), allocatable :: S_half(:,:)
   real(DP), allocatable :: rwork(:)
@@ -39,19 +39,19 @@ subroutine build_s_matrix(pp, q, S_matrix)
   ! if the save file hasn't been opened, open one
   if (pp%s_unit < 0) then
     pp%s_unit = - pp%s_unit
-    call open_buffer(pp%s_unit, 's_matrix', size(S_matrix), 1, info)
-    old_size_s_matrix=size(S_matrix)
+    call open_buffer(pp%s_unit, 's_matrix', size(Hk%S), 1, info)
+    old_size_s_matrix=size(Hk%S)
   endif
 
   ! if the buffer increases in size - dynamically change it
-  if (size(S_matrix) > old_size_s_matrix) then
+  if (size(Hk%S) > old_size_s_matrix) then
     call close_buffer(pp%s_unit,'delete')
-    call open_buffer(pp%s_unit, 's_matrix', size(S_matrix), 1, info)
-    old_size_s_matrix=size(S_matrix)
+    call open_buffer(pp%s_unit, 's_matrix', size(Hk%S), 1, info)
+    old_size_s_matrix=size(Hk%S)
   endif
 
   if (q > 0) then
-    call get_buffer(S_matrix, size(S_matrix), pp%s_unit, q)
+    call get_buffer(Hk%S, size(Hk%S), pp%s_unit, q)
     return
   endif
 
@@ -59,7 +59,7 @@ subroutine build_s_matrix(pp, q, S_matrix)
 
 
   ! Make <B|S|B>
-  S_matrix = cmplx(0.d0, kind=DP)
+  Hk%S = cmplx(0.d0, kind=DP)
   ioff = 1 !index offset
   do t = 1, nsp
    do a = 1, nat
@@ -73,12 +73,12 @@ subroutine build_s_matrix(pp, q, S_matrix)
     ioff = ioff + nh(t)
    enddo
   enddo
-  ! Do the right side of the transformation, summing into S_matrix
+  ! Do the right side of the transformation, summing into Hk%S
 #ifdef __SSDIAG
   call ZGEMM('N', 'C', nbasis, nbasis, nkb, one, &
                S_half(:,:), nbasis, &
                pp%projs(:,:), nbasis, zero, &
-               S_matrix(:,:), nbasis)
+               Hk%S(:,:), nbasis)
 #else
   call ZGEMM('N', 'C', nbasis, nbasis, nh(t), one, &
                S_half(:,:), nbasis, &
@@ -89,22 +89,22 @@ subroutine build_s_matrix(pp, q, S_matrix)
 
 #ifdef __SSDIAG
   ! add identity to S
-  forall(i = 1:nbasis) S_matrix(i,i) = S_matrix(i,i) + one
+  forall(i = 1:nbasis) Hk%S(i,i) = Hk%S(i,i) + one
 #else
   do i = 1, nbasis; do j = 1, nbasis
     call scalapack_localindex(i, j, i_l, j_l, islocal)
     if (islocal) then
       if (i == j) then
-        S_matrix(i_l, j_l) = S_tmp(i, j) + one
+        Hk%S(i_l, j_l) = S_tmp(i, j) + one
       else
-        S_matrix(i_l, j_l) = S_tmp(i, j)
+        Hk%S(i_l, j_l) = S_tmp(i, j)
       endif
     endif
   enddo; enddo
   deallocate(S_tmp)
 #endif
 
-  call save_buffer(S_matrix, size(S_matrix), pp%s_unit, -q)
+  call save_buffer(Hk%S, size(Hk%S), pp%s_unit, -q)
 
   return
 

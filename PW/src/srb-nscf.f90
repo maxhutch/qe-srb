@@ -35,7 +35,7 @@
   use lsda_mod, only : nspin
   use cell_base, only : bg
 
-  use srb_types, only : basis, ham_expansion, pseudop
+  use srb_types, only : basis, ham_expansion, pseudop, kproblem
   use srb, only : build_basis, build_h_coeff, build_h_matrix, diagonalize
   use srb, only : build_projs, build_projs_reduced, load_projs, build_s_matrix
   use mp, only : mp_sum
@@ -55,7 +55,8 @@
 !  TYPE(basis) :: opt_basis  !>!< optimal basis; looks like wavefunctions
   TYPE(ham_expansion) :: ham
   TYPE(pseudop) :: projs
-  complex(DP), allocatable :: ham_matrix(:,:), S_matrix(:,:), S_matrix2(:,:), evecs(:,:)
+  TYPE(kproblem) :: Hk
+  complex(DP), allocatable :: S_matrix2(:,:), evecs(:,:)
   real(DP), allocatable ::  energies(:,:)
   real(DP) :: ecut_srb
   character(255) :: fmtstr
@@ -93,23 +94,23 @@
 
   ! Diagonalize the Hamiltonian, producing states
 #ifdef __SSDIAG
-  allocate(ham_matrix(opt_basis%length, opt_basis%length))
+  allocate(Hk%H(opt_basis%length, opt_basis%length))
   allocate(projs%projs(opt_basis%length, nkb))
   if (okvan) then
-    allocate(S_matrix(opt_basis%length, opt_basis%length), S_matrix2(opt_basis%length, opt_basis%length))
+    allocate(Hk%S(opt_basis%length, opt_basis%length), S_matrix2(opt_basis%length, opt_basis%length))
     projs%us = .true.
   else
-    allocate(S_matrix(1,1), S_matrix2(1,1))
+    allocate(Hk%S(1,1), S_matrix2(1,1))
   end if
 #else
   call scalapack_distrib(opt_basis%length, opt_basis%length, i, j)
-  allocate(ham_matrix(i, j))
+  allocate(Hk%H(i, j))
   if (okvan) then
-    allocate(S_matrix(i, j), S_matrix2(i,j))
+    allocate(Hk%S(i, j), S_matrix2(i,j))
     allocate(projs%projs(opt_basis%length, nkb))
     projs%us = .true.
   else
-    allocate(S_matrix(1,1), S_matrix2(1,1), projs%projs(1,1))
+    allocate(Hk%S(1,1), S_matrix2(1,1), projs%projs(1,1))
   end if
 #endif
   allocate(evecs(opt_basis%length, nbnd))
@@ -128,23 +129,23 @@
 
     if (okvan) then
       call start_clock(' build_proj')
-      call build_s_matrix(projs, (1-q)/nproc_pool - 1, S_matrix)
+      call build_s_matrix(projs, (1-q)/nproc_pool - 1, Hk)
       call stop_clock(' build_proj')
     end if
     write(*,*) q
     spin: do s = 1, nspin
       CALL start_clock(' build_mat' )
-      call build_h_matrix(ham, qpoints%xr(:,q), projs, s, ham_matrix)
+      call build_h_matrix(ham, qpoints%xr(:,q), projs, s, Hk%H)
       CALL stop_clock(' build_mat' )
 
     write(*,*) q
       CALL start_clock( ' diagonalize' )
         if (okvan) then
-          S_matrix2(:,:) = S_matrix(:,:)
-          call diagonalize(ham_matrix, energies(:,q+(s-1)*qpoints%nred), evecs, & 
+          S_matrix2(:,:) = Hk%S(:,:)
+          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, & 
                            nbnd, S_matrix2, meth_opt = meth)
         else
-          call diagonalize(ham_matrix, energies(:,q+(s-1)*qpoints%nred), evecs, &
+          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, &
                            nbnd, meth_opt = meth)
         end if
       CALL stop_clock( ' diagonalize' )
@@ -152,7 +153,7 @@
     write(*,*) q
   enddo
   call mp_sum(energies, intra_pool_comm)
-  deallocate(ham_matrix, ham%con, ham%lin, S_matrix, S_matrix2, projs%projs)
+  deallocate(Hk%H, ham%con, ham%lin, Hk%S, S_matrix2, projs%projs)
   !
   WRITE( stdout, 9000 ) get_clock( 'PWSCF' )
   !
