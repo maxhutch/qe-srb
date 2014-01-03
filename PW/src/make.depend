@@ -554,6 +554,7 @@ forces.o : ../../Modules/cell_base.o
 forces.o : ../../Modules/control_flags.o
 forces.o : ../../Modules/fft_base.o
 forces.o : ../../Modules/fft_interfaces.o
+forces.o : ../../Modules/input_parameters.o
 forces.o : ../../Modules/io_global.o
 forces.o : ../../Modules/ions_base.o
 forces.o : ../../Modules/kind.o
@@ -1220,6 +1221,7 @@ potinit.o : pwcom.o
 potinit.o : scf_mod.o
 print_clock_pw.o : ../../Modules/control_flags.o
 print_clock_pw.o : ../../Modules/funct.o
+print_clock_pw.o : ../../Modules/input_parameters.o
 print_clock_pw.o : ../../Modules/io_global.o
 print_clock_pw.o : ../../Modules/paw_variables.o
 print_clock_pw.o : ../../Modules/uspp.o
@@ -1599,6 +1601,7 @@ srb-build_basis.o : ../../Modules/wavefunctions.o
 srb-build_basis.o : buffers.o
 srb-build_basis.o : pwcom.o
 srb-build_basis.o : scalapack_mod.o
+srb-build_basis.o : srb-matrix_mod.o
 srb-build_basis.o : srb_mod.o
 srb-diag.o : ../../Modules/constants.o
 srb-diag.o : ../../Modules/control_flags.o
@@ -1606,6 +1609,23 @@ srb-diag.o : ../../Modules/kind.o
 srb-diag.o : ../../Modules/mp.o
 srb-diag.o : ../../Modules/mp_global.o
 srb-diag.o : scalapack_mod.o
+srb-force_us.o : ../../Modules/becmod.o
+srb-force_us.o : ../../Modules/cell_base.o
+srb-force_us.o : ../../Modules/constants.o
+srb-force_us.o : ../../Modules/control_flags.o
+srb-force_us.o : ../../Modules/io_files.o
+srb-force_us.o : ../../Modules/ions_base.o
+srb-force_us.o : ../../Modules/kind.o
+srb-force_us.o : ../../Modules/mp.o
+srb-force_us.o : ../../Modules/mp_global.o
+srb-force_us.o : ../../Modules/noncol.o
+srb-force_us.o : ../../Modules/recvec.o
+srb-force_us.o : ../../Modules/uspp.o
+srb-force_us.o : ../../Modules/wavefunctions.o
+srb-force_us.o : buffers.o
+srb-force_us.o : pwcom.o
+srb-force_us.o : srb_mod.o
+srb-force_us.o : symme.o
 srb-h_coeff.o : ../../Modules/cell_base.o
 srb-h_coeff.o : ../../Modules/fft_base.o
 srb-h_coeff.o : ../../Modules/fft_interfaces.o
@@ -1616,6 +1636,7 @@ srb-h_coeff.o : ../../Modules/recvec.o
 srb-h_coeff.o : ../../Modules/wavefunctions.o
 srb-h_coeff.o : buffers.o
 srb-h_coeff.o : pwcom.o
+srb-h_coeff.o : srb-matrix_mod.o
 srb-h_coeff.o : srb_mod.o
 srb-h_matrix.o : ../../Modules/cell_base.o
 srb-h_matrix.o : ../../Modules/constants.o
@@ -1636,6 +1657,10 @@ srb-load_projs.o : ../../Modules/kind.o
 srb-load_projs.o : ../../Modules/mp_global.o
 srb-load_projs.o : buffers.o
 srb-load_projs.o : srb_mod.o
+srb-matrix_mod.o : ../../Modules/kind.o
+srb-matrix_mod.o : ../../Modules/mp.o
+srb-matrix_mod.o : ../../Modules/mp_global.o
+srb-matrix_mod.o : scalapack_mod.o
 srb-nscf.o : ../../Modules/cell_base.o
 srb-nscf.o : ../../Modules/check_stop.o
 srb-nscf.o : ../../Modules/constants.o
@@ -1735,6 +1760,7 @@ srb-scf.o : buffers.o
 srb-scf.o : pwcom.o
 srb-scf.o : scalapack_mod.o
 srb-scf.o : scf_mod.o
+srb-scf.o : srb-matrix_mod.o
 srb-scf.o : srb_mod.o
 srb-scf.o : symme.o
 srb-store_states.o : ../../Modules/kind.o
@@ -1784,6 +1810,7 @@ srb_mod.o : kpoint_mod.o
 srb_mod.o : pwcom.o
 srb_mod.o : scalapack_mod.o
 srb_mod.o : scf_mod.o
+srb_mod.o : srb-matrix_mod.o
 start_k.o : ../../Modules/cell_base.o
 start_k.o : ../../Modules/kind.o
 stop_run.o : ../../Modules/environment.o

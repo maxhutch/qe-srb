@@ -86,7 +86,10 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
 
     forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g2kin(i)
 
-    call block_inner(nbnd, npw, opt_basis%elements, npw, buffer, npw, ham%con(:,:,1), ham%desc)
+    call block_inner(nbnd, npw, &
+                     one,  opt_basis%elements, npw, &
+                           buffer,             npw, &
+                     zero, ham%con(:,:,1),     ham%desc)
 
     if (nspin == 2) ham%con(:,:,2) = ham%con(:,:,1)
     ham%kin_con = ham%con(:,:,1)
@@ -94,25 +97,24 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     deallocate(buffer)
     call stop_clock( '   part1' )
   endif
-
   if (.not. saved) then
   ! linear term; almost the same as above except gtmp instead of g2kin
+!    allocate(gtmp(ham%desc%nrl, ham%desc%ncl), buffer(npw, nbnd))
     allocate(gtmp(nbnd, nbnd), buffer(npw, nbnd))
     do ixyz = 1, 3
       gtmp = cmplx(0.d0, kind=DP)
       forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g(ixyz, igk(i))*tpiba
-
-      call zgemm('C', 'N', nbnd, nbnd, npw, one, &
+#if 0
+      call block_inner(nbnd, npw, &
+                       one,  opt_basis%elements, npw, &
+                             buffer,             npw, &
+                       zero, gtmp,               ham%desc)
+#else
+     call zgemm('C', 'N', nbnd, nbnd, npw, one, &
                  opt_basis%elements(:,:), npw, &
                  buffer, npw, zero, &
                  gtmp, nbnd)
-
-!      do j = 1, npw
-!        call zher('U', nbnd, cmplx(g(ixyz, igk(j))*tpiba, kind=DP), &
-!                  opt_basis%elements(j,:), 1, &
-!                  gtmp, nbnd)
-!      enddo
-!      ham%lin(ixyz,:,:) = conjg(gtmp)
+#endif
       ham%lin(ixyz,:,:) = gtmp
     enddo
     deallocate(gtmp, buffer)
@@ -125,39 +127,37 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   ! local potential
   ! ===========================================================================
   call start_clock( '  local_potential' )
-!  if (saved) then
-  if (.false.) then
-    write(*,*) "using aux basis size: ", decomp_size
-    allocate(decomp1(dffts%nnr, decomp_size), decomp2(nbnd, decomp_size))
-    do j = 1, decomp_size
-      call get_buffer(decomp1(:,j), dffts%nnr, 128, j)
-      call get_buffer(decomp2(:,j), nbnd, 129, j)
-    enddo
-    allocate(buffer(dffts%nnr, decomp_size))
-    forall (j = 1:decomp_size, i = 1:dffts%nnr) buffer(i,j) = decomp1(i,j) * V_rs(i, 1)
-    allocate(gtmp(decomp_size, decomp_size))
-    call ZGEMM('C', 'N', decomp_size, decomp_size, dffts%nnr, cmplx(1./dffts%nnr, kind=DP), &
-               decomp1, dffts%nnr, &
-               buffer, dffts%nnr, zero, &
-               gtmp, decomp_size)
-    deallocate(buffer, decomp1)
-    allocate(buffer(nbnd, decomp_size))
-    call ZGEMM('N', 'N', nbnd, decomp_size, decomp_size, one, &
-               decomp2, nbnd, &
-               gtmp, decomp_size, zero, &
-               buffer, nbnd)
-!    deallocate(gtmp); allocate(gtmp(nbnd,nbnd))
-    call ZGEMM('N', 'C', nbnd, nbnd, decomp_size, one, &
-               buffer, nbnd, &
-               decomp2, nbnd, one, &
-               ham%con(:,:,1), nbnd)
-!    call ZGEMM('N', 'N', nbnd, nbnd, decomp_size, one, &
-!                decomp2, nbnd, &
-!                buffer, decomp_size, one, &
-!                ham%con(:,:,1), nbnd)
-    deallocate(buffer, decomp2, gtmp)
-  else
 #define BLOCK 32
+#if 0
+  allocate(buffer(size(psic, 1), BLOCK), gtmp(npw, nbnd))
+  spin: do s = 1, nspin
+  do j = 1, nbnd, BLOCK
+    !
+    nbl = min(BLOCK, nbnd - j + 1)
+    buffer(1:dffts%nnr, 1:nbl) = ( 0.D0, 0.D0 )
+    forall (i = 1:nbl) buffer(nls(igk(1:npw)), i) = opt_basis%elements(1:npw,j+i-1)
+    do i = 1, nbl
+      CALL invfft ('Wave', buffer(:,i), dffts)
+    enddo
+    ! ... product with the potential V_rs = (vltot+v) on the smooth grid
+    forall (i = 1:nbl, k = 1:dffts%nnr)
+      buffer(k,i) = buffer(k,i) * V_rs(k,s)
+    end forall
+    ! ... back to reciprocal space
+    do i = 1, nbl
+      CALL fwfft ('Wave', buffer(:,i), dffts)
+    enddo
+    ! ... store with correct ordering
+    forall (i = 1:nbl) gtmp(1:npw, i+j-1) = buffer(nls(igk(1:npw)), i)
+  enddo
+  !
+  call block_inner(nbnd, npw, &
+                   one, opt_basis%elements, npw, &
+                        gtmp,               npw, &
+                   one, ham%con(:,:,s),     ham%desc)
+  enddo spin
+  deallocate(buffer, gtmp)
+#else
   allocate(buffer(size(psic, 1), BLOCK), gtmp(npw, BLOCK))
   spin: do s = 1, nspin
   do j = 1, nbnd, BLOCK
@@ -178,18 +178,18 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     enddo
     ! ... store with correct ordering
     forall (i = 1:nbl) gtmp(1:npw, i) = buffer(nls(igk(1:npw)), i)
-    !
     call ZGEMM('C', 'N', j+nbl-1, nbl, npw, one, &
                 opt_basis%elements(:,:), npw, &
                 gtmp, npw, one, &
                 ham%con(:,j,s), nbnd)
   enddo
+  !
   enddo spin
-  deallocate(buffer, gtmp)
-  endif
-  deallocate(igk, g2kin)
-
   call mp_sum( ham%con, intra_pool_comm)
+  deallocate(buffer, gtmp)
+#endif
+
+  deallocate(igk, g2kin)
 
   call stop_clock( '  local_potential' )
 

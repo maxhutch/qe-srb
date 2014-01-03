@@ -98,13 +98,12 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   logical :: trivial, islocal
   ! shortcuts
   integer :: nks_orig, nks, nbnd, npw, igwx
-  COMPLEX(DP), parameter :: zero = (0.d0, 0.d0), one = (1.d0, 0.d0)
+  COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0,kind=DP)
   integer, allocatable, save :: shuffle(:,:)
   type(mydesc) :: S_desc
   nbnd = size(evc_int,2)
 
   call start_clock('  mirrors')
-
 
   ! copy original k-point set information
   nks_orig = nks_int
@@ -318,7 +317,10 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
 
   call grab_desc(S_desc)
-  call block_inner(nbnd*nks, ngk_gamma, evc_all, npwx_tmp, evc_all, npwx_tmp, S_l, S_desc)
+  call block_inner(nbnd*nks, ngk_gamma, &
+                   one,  evc_all, npwx_tmp, &
+                         evc_all, npwx_tmp, &
+                   zero, S_l, S_desc)
 
   call stop_clock('  make_S')
 
