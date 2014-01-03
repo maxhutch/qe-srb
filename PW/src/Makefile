@@ -206,6 +206,7 @@ srb-projs_reduced.o \
 srb-build_basis.o \
 srb-stress_us.o \
 srb-force_us.o \
+srb-matrix_mod.o \
 stop_run.o \
 stres_cc.o \
 stres_ewa.o \

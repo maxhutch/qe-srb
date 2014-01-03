@@ -12,6 +12,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE srb_types, ONLY : basis, kmap
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
+  use srb_matrix, only : mydesc, block_inner
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -25,7 +26,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   use wavefunctions_module, only : psic
   USE fft_interfaces, only: fwfft, invfft
   use fft_types , only : fft_dlay_descriptor
-  use scalapack_mod, only : desc_re, desc_sq
+  use scalapack_mod, only : desc_re, desc_sq, myrow, mycol, nprow, npcol
   use scalapack_mod, only : scalapack_distrib, scalapack_distrib_re, scalapack_localindex, scalapack_diag, scalapack_svd
   use buffers, only : get_buffer
   use io_files, only : iunwfc, nwordwfc
@@ -100,6 +101,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   integer :: nks_orig, nks, nbnd, npw, igwx
   COMPLEX(DP), parameter :: zero = (0.d0, 0.d0), one = (1.d0, 0.d0)
   integer, allocatable, save :: shuffle(:,:)
+  type(mydesc) :: S_desc
   nbnd = size(evc_int,2)
 
   call start_clock('  mirrors')
@@ -316,6 +318,14 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   allocate(S_l(nbasis_lr, nbasis_lc), B_l(nbasis_lr, nbasis_lc), eigU(nbasis))
   S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
 #if 1
+#if 1
+  S_desc%desc = desc_sq
+  S_desc%myrow = myrow
+  S_desc%mycol = mycol
+  S_desc%nprow = nprow
+  S_desc%npcol = npcol
+  call block_inner(nbnd*nks, ngk_gamma, evc_all, npwx_tmp, evc_all, npwx_tmp, S_l, S_desc)
+#else
   allocate(S_g2(nbnd, nbnd))
   ! now the rest
   do k2 = 1, nks
@@ -335,6 +345,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
    enddo
   enddo
   deallocate(S_g2)
+#endif
 #else
   allocate(S_g2(nbasis, nbasis))
   call zherk('U', 'C', nbasis, ngk_gamma, one, &
