@@ -26,6 +26,7 @@ module srb_types
      COMPLEX(DP), allocatable :: H(:,:)
      COMPLEX(DP), allocatable :: S(:,:)
      TYPE(mydesc)             :: desc
+     logical                  :: generalized
      integer                  :: k 
   END TYPE kproblem
   !
@@ -215,13 +216,15 @@ MODULE srb
       type(kproblem), intent(inout) :: Hk
     end subroutine build_s_matrix
 
-    SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_opt, P, Pinv, btype_opt)
+    SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_opt, P, Pinv, btype_opt)
       USE kinds, ONLY: DP
+      USE srb_types, only : kproblem
+      use srb_matrix, only : mydesc
       IMPLICIT NONE
-      COMPLEX(DP), intent(INOUT) :: matrix(:,:)
+      TYPE(kproblem), intent(INOUT) :: Hk
       COMPLEX(DP), intent(INOUT) :: evecs(:,:)
+      type(mydesc), intent(IN) :: evecs_desc
       REAL(DP),    intent(OUT)   :: evals(:)
-      COMPLEX(DP), intent(INOUT), optional :: smatrix(:,:)
       integer,     intent(in), optional :: num_opt
       integer,     intent(in), optional :: meth_opt
       COMPLEX(DP), intent(IN), optional :: P(:,:)

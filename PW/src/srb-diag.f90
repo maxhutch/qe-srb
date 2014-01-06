@@ -5,9 +5,11 @@
 #define DLEN 9
 #define ETHR_FAC 1.D-2
 
-recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_opt, P, Pinv, btype_opt)
+recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_opt, P, Pinv, btype_opt)
   ! Diagonalizes a Hermitian matrix, providing eigenvalues and eigenvectors
   USE kinds, ONLY: DP
+  use srb_types, only : kproblem
+  use srb_matrix, only : mydesc
   USE constants,        ONLY : pi
 
   USE scalapack_mod, only : scalapack_diag, nprow, npcol, ctx_sq, desc_sq
@@ -18,10 +20,10 @@ recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_o
   IMPLICIT NONE
 
   ! arguments
-  COMPLEX(DP), intent(INOUT) :: matrix(:,:)
+  type(kproblem), intent(INOUT) :: Hk
   COMPLEX(DP), intent(INOUT) :: evecs(:,:)
+  type(mydesc), intent(in) :: evecs_desc
   REAL(DP),    intent(inOUT)   :: evals(:)
-  COMPLEX(DP), intent(INOUT), optional :: smatrix(:,:)
   integer,     intent(in), optional :: num_opt !>!< number of eigenvectors to compute
   integer,     intent(in), optional :: meth_opt
   complex(DP), intent(in), optional :: P(:,:)
@@ -34,9 +36,9 @@ recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_o
   real(DP), allocatable :: ew(:)
   logical, allocatable :: conv(:)
   COMPLEX(DP), ALLOCATABLE :: cg(:), scg(:), g0(:), lagrange(:)
-  real(DP), allocatable :: rwork(:)
-  integer, allocatable :: iwork(:), ifail(:)
-  integer :: lwork, nv_out, ierr
+  real(DP), allocatable :: rwork(:), gap(:)
+  integer, allocatable :: iwork(:), ifail(:), iclustr(:)
+  integer :: lwork, lrwork, liwork, ne_out, nv_out, ierr
   real(DP) :: abstol, ethr_empty
   integer :: num, num2, n, np, nb1, nbn, m, iter, moved, i, j, meth
   complex(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
@@ -51,11 +53,11 @@ recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_o
   real(dp),external :: DLAMCH, dznrm2
   complex(DP), external :: ZDOTC
 
-  n = size(matrix, 1)
+  n = size(Hk%H, 1)
   if (present(num_opt)) then
     num = num_opt
   else
-    num = size(matrix, 1)
+    num = size(Hk%H, 1)
   end if
   if (.not. present(meth_opt) .or. ethr < 1.D-11) then
     meth = 0
@@ -73,56 +75,93 @@ recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_o
 
   select case (meth) 
   case ( 0 ) ! Direct eigen-solve
-  if (present(smatrix)) then
-#if 0
-    CALL cdiaghg( n, num, matrix, smatrix, n, evals, evecs )
-#else
+  if (Hk%generalized) then
     if (num > 0) then
-      allocate(rwork(7*n), iwork(5*n), ifail(n))
-      allocate(z(n, num))
-      allocate(work(1))
-      call zhegvx(1, 'V', 'I', 'U', n, matrix, n, smatrix, n, 0, 0, 1, &
-                  num, abstol, nv_out, evals, z, n, work, -1, rwork, iwork, ifail, ierr)
+      allocate(ifail(n))
+      allocate(iclustr(2*Hk%desc%nprow*Hk%desc%npcol), gap(Hk%desc%nprow*Hk%desc%npcol))
+      allocate(work(1), rwork(1), iwork(1))
+      allocate(z(Hk%desc%nrl, Hk%desc%ncl))
+      call pzhegvx(1, 'V', 'I', 'U', n, &
+                   Hk%H, 1, 1, Hk%desc%desc, &
+                   Hk%S, 1, 1, Hk%desc%desc, &
+                   0, 0, 1, num, &
+                   abstol, ne_out, nv_out, evals, &
+                   -1.d0, &
+                   z, 1, 1, Hk%desc%desc, &
+                   work, -1, rwork, -1, iwork, -1, &
+                   ifail, iclustr, gap, ierr)
       lwork = work(1); deallocate(work); allocate(work(lwork))
+      lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
+      liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
 
       abstol = ethr
 
-      call zhegvx( 1, 'V', 'I', 'U', n, &
-                  matrix, n, &
-                  smatrix, n, &
-                  0, 0, 1, num, abstol, nv_out, &
-                  evals, &
-                  z, n, &
-                  work, lwork, rwork, iwork, &
-                  ifail, ierr )
+      call pzhegvx(1, 'V', 'I', 'U', n, &
+                   Hk%H, 1, 1, Hk%desc%desc, &
+                   Hk%S, 1, 1, Hk%desc%desc, &
+                   0, 0, 1, num, &
+                   abstol, ne_out, nv_out, evals, &
+                   -1.d0, &
+                   z, 1, 1, Hk%desc%desc, &
+                   work, lwork, rwork, lrwork, iwork, liwork, &
+                   ifail, iclustr, gap, ierr)
       if (ierr /= 0) write(*,*) "zhegvx error: ", ierr
-      matrix(:,1:num) = z
+!      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs_desc%desc, 1, 1, evecs_desc%desc, Hk%desc%desc(2), ierr)
+      evecs = z(:,1:num)
       deallocate(z)
+      deallocate(work, rwork, iwork)
+      deallocate(ifail, iclustr, gap)
     else
-      lwork = 2*size(matrix, 1)
-      allocate(work(lwork), rwork(3*size(matrix, 1)))
-      call ZHEGV(1, 'V', 'U', size(matrix, 1), &
-                 matrix, size(matrix, 1), &
-                 smatrix, size(matrix, 1), &
+      lwork = 2*n
+      allocate(work(lwork), rwork(3*n))
+      call ZHEGV(1, 'V', 'U', n, &
+                 Hk%H, n, &
+                 Hk%S, n, &
                  evals, work, lwork, rwork, ierr)
       if (ierr /= 0) write(*,*) "zhegv error: ", ierr
+      evecs = Hk%H(:,1:num)
+      deallocate(work)
     endif
-    deallocate(work, rwork)
-    evecs = matrix(:,1:num)
-#endif
   else
-    lwork = 2*size(matrix, 1)
-    allocate(work(lwork), rwork(3*size(matrix, 1)))
     if (num == 0) then
-      CALL ZHEEV('N', 'U', size(matrix, 1), matrix, size(matrix, 1), evals, work, lwork, rwork, ierr) 
+      lwork = 2*n
+      allocate(work(lwork), rwork(3*n))
+      CALL ZHEEV('N', 'U', n, Hk%H, n, evals, work, lwork, rwork, ierr) 
+      evecs = Hk%H(:,1:num)
+      deallocate(work, rwork)
     else
-      CALL ZHEEV('V', 'U', size(matrix, 1), matrix, size(matrix, 1), evals, work, lwork, rwork, ierr) 
+      allocate(ifail(n))
+      allocate(z(Hk%desc%nrl, Hk%desc%ncl))
+      allocate(iclustr(2*Hk%desc%nprow*Hk%desc%npcol), gap(Hk%desc%nprow*Hk%desc%npcol))
+      allocate(work(1), rwork(1), iwork(1))
+      abstol = ethr
+      CALL pzheevx('V', 'I', 'U', n, &
+                  Hk%H, 1, 1, Hk%desc%desc, &
+                  0, 0, 1, num, &
+                  abstol, ne_out, nv_out, evals, &
+                  -1.d0, &
+                  z, 1, 1, Hk%desc%desc, &
+                  work, -1, rwork, -1, iwork, -1, &
+                  ifail, iclustr, gap, ierr) 
+      lwork = work(1); deallocate(work); allocate(work(lwork))
+      lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
+      liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
+      CALL pzheevx('V', 'I', 'U', n, &
+                  Hk%H, 1, 1, Hk%desc%desc, &
+                  0, 0, 1, num, &
+                  abstol, ne_out, nv_out, evals, &
+                  -1.d0, &
+                  z, 1, 1, Hk%desc%desc, &
+                  work, lwork, rwork, lrwork, iwork, liwork, &
+                  ifail, iclustr, gap, ierr) 
+      evecs = z(:,1:num)
+      deallocate(z)
+      deallocate(ifail, iclustr, gap)
+      deallocate(work, rwork, iwork)
     end if
-    deallocate(work, rwork)
-    evecs = matrix(:,1:num)
   end if
   return
-
+#if 0
   case ( 2 ) ! Block Davidson
   num2 = n
   allocate(psi(n,num2), hpsi(n,num2), spsi(n,num2))
@@ -496,7 +535,7 @@ recursive SUBROUTINE diagonalize (matrix, evals, evecs, num_opt, smatrix, meth_o
   deallocate(btype)
   deallocate(z)
   return
-
+#endif
   end select 
 
 

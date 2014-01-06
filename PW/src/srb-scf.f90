@@ -26,7 +26,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   use wvfct,                only : wg, et
 
   USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list, kproblem
-  USE srb_matrix,       ONLY : grab_desc
+  USE srb_matrix,       ONLY : grab_desc, mydesc
   USE srb,              ONLY : qpoints, basis_life, freeze_basis
   USE srb,              ONLY : use_cuda, rho_reduced 
   use srb,              ONLY : states, bstates, wgq, red_basis=>scb, ets, pp=>spp
@@ -81,6 +81,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
   complex(DP), allocatable :: evecs(:,:) !>!< eigenvectors of Hamiltonian
+  type(mydesc)             :: evecs_desc
   complex(DP), allocatable :: P(:,:,:), Pinv(:,:,:) !>!< Preconditioner and inverse
   complex(DP), allocatable :: rho_srb(:,:,:) !>!< Denstiy matrix in reduced basis
   real(DP), allocatable :: wr2(:), xr2(:,:) !>!< copies of k-points and weights
@@ -141,6 +142,8 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   ! 
   call scalapack_distrib(red_basis%length, red_basis%length, h_coeff%desc%nrl, h_coeff%desc%ncl)
   call grab_desc(h_coeff%desc)
+  call scalapack_distrib(red_basis%length, nbnd, evecs_desc%nrl, evecs_desc%ncl)
+  call grab_desc(evecs_desc)
 
   call start_clock( ' build_h_coeff' )
   call build_h_coeff(red_basis, V_rs(:,:), ecut_srb, nspin, h_coeff, basis_age /= 0)
@@ -281,10 +284,13 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 #endif
         if (okvan) then
           S_matrix2(:,:) = Hk%S(:,:)
-          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, &
-                           nbnd, S_matrix2, meth_opt = meth)
+          Hk%generalized = .true.
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, evecs_desc, &
+                           nbnd, meth_opt = meth)
+          Hk%S(:,:) = S_matrix2(:,:) 
         else
-          call diagonalize(Hk%H, energies(:,q+(s-1)*qpoints%nred), evecs, &
+          Hk%generalized = .false.
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, evecs_desc, &
                            nbnd, meth_opt = meth)
         end if
         CALL stop_clock( ' diagonalize' )
