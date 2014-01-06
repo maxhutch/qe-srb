@@ -14,8 +14,10 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   use ions_base, only : nat, ntyp => nsp, ityp, tau
   use wvfct, only : npwx_int => npwx, ecutwfc
   use mp, only : mp_sum, mp_max
-  use mp_global, only : intra_pool_comm, me_pool, me_pool, nproc_pool
+  use mp_global, only : intra_pool_comm, me_pool, nproc_pool
+  use mp_global, only : intra_pot_comm, me_pot, nproc_pot, npot, my_pot_id
   use buffers, only : open_buffer, save_buffer, get_buffer, close_buffer
+  use srb, only : me_tub, nproc_tub, my_tub_id
 
   IMPLICIT NONE
 
@@ -72,20 +74,29 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       jkb = jkb + nh(t)
     enddo
   enddo
+  pp%nkb_l = 0
+  do t = 1,ntyp
+    do a = 1, nat, nproc_pot
+      if (ityp(a) /= t) cycle
+      pp%nkb_l = pp%nkb_l + nh(t)
+    enddo
+  enddo
+  pp%nkb_max = pp%nkb_l
+  call mp_max(pp%nkb_max, intra_pool_comm) 
  
   allocate (ylm(npw, (lmaxkb + 1)**2), gk(3, npw), qg(npw), vq(npw))
 
   ! if the projector save file hasn't been opened, open one
   if (pp%projs_unit < 0) then
     pp%projs_unit = - pp%projs_unit
-    call open_buffer(pp%projs_unit, 'projs', opt_basis%length * nkb, 1, info)
+    call open_buffer(pp%projs_unit, 'projs', opt_basis%length * pp%nkb_max, 1, info)
     old_basis_length = opt_basis%length
   endif
 
   ! if we have a longer buffer - adjust size of file dynamically
   if (opt_basis%length > old_basis_length) then
     call close_buffer(pp%projs_unit,'delete')
-    call open_buffer(pp%projs_unit, 'projs', opt_basis%length * nkb, 1, info)
+    call open_buffer(pp%projs_unit, 'projs', opt_basis%length * pp%nkb_max, 1, info)
     old_basis_length = opt_basis%length
   endif
 
@@ -199,8 +210,8 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
         call stop_clock('  proj_init')
 
         call start_clock('  proj_save')
-        if (t > 1 .and. MOD(q-1, nproc_pool) == me_pool) then
-          call get_buffer(pp%projs, nbasis*nkb, pp%projs_unit, (q-1)/nproc_pool+1)
+        if (t > 1 .and. MOD(q-1, npot) == my_tub_id) then
+          call get_buffer(pp%projs, nbasis*pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
         endif
         call stop_clock('  proj_save')
 
@@ -213,8 +224,8 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
         call stop_clock('  proj_gemm')
         ! save!
         call start_clock('  proj_save')
-        if (MOD(q-1, nproc_pool) == me_pool) then
-          call save_buffer(pp%projs, nbasis * nkb, pp%projs_unit, (q-1)/nproc_pool+1)
+        if (MOD(q-1, npot) == my_tub_id) then
+          call save_buffer(pp%projs, nbasis * pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
         endif
         call stop_clock('  proj_save')
 
@@ -302,8 +313,8 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       call stop_clock('  make_vkb')
       
       call start_clock('  proj_save')
-      if (t > 1 .and. MOD(q-1, nproc_pool) == me_pool) then
-        call get_buffer(pp%projs, nbasis*nkb, pp%projs_unit, (q-1)/nproc_pool+1)
+      if (t > 1 .and. MOD(q-1, npot) == my_tub_id) then
+        call get_buffer(pp%projs, nbasis*pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
       else
         pp%projs = cmplx(0.d0, kind=DP)
       endif
@@ -330,8 +341,8 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
 
       ! save!
       call start_clock('  proj_save')
-      if (MOD(q-1, nproc_pool) == me_pool) then
-        call save_buffer(pp%projs, nbasis * nkb, pp%projs_unit, (q-1)/nproc_pool+1)
+      if (MOD(q-1, npot) == my_pot_id) then
+        call save_buffer(pp%projs, nbasis * pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
       endif
       call stop_clock('  proj_save')
 

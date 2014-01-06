@@ -8,7 +8,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 !
 !
 !#define SCUDA
-#define __SSDIAG
 #define DEBUG
 
   USE ISO_C_BINDING,        ONLY : c_ptr, C_NULL_PTR
@@ -237,7 +236,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         ! ... Build dense Hamiltonian matrix
         !
         CALL start_clock(' build_mat' )
-        call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk%H)
+        call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk)
         CALL stop_clock(' build_mat' )
 
         ! 

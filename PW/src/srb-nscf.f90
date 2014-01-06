@@ -135,7 +135,7 @@
     write(*,*) q
     spin: do s = 1, nspin
       CALL start_clock(' build_mat' )
-      call build_h_matrix(ham, qpoints%xr(:,q), projs, s, Hk%H)
+      call build_h_matrix(ham, qpoints%xr(:,q), projs, s, Hk)
       CALL stop_clock(' build_mat' )
 
     write(*,*) q

@@ -49,6 +49,9 @@ module srb_types
     integer                  :: b_unit = -3999
     integer                  :: b_size(16)
     INTEGER                  :: nkb
+    INTEGER                  :: nkb_l
+    INTEGER                  :: nkb_max
+    INTEGER                  :: first_atom
     logical                  :: us = .false.
   END TYPE pseudop
   !
@@ -89,6 +92,10 @@ MODULE srb
   type(nk_list), save :: states
   type(nk_list), save :: bstates
   integer, save :: decomp_size = -1
+  integer, save :: my_tub_id
+  integer, save :: me_tub
+  integer, save :: nproc_tub
+  integer, save :: ntub
 
   ! interfaces
   interface
@@ -154,14 +161,14 @@ MODULE srb
       type(pseudop), intent(inout) :: pp
     end subroutine copy_pseudo_cuda
 
-    SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, ham_matrix)
+    SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
       USE kinds,   ONLY : DP
-      USE srb_types, ONLY : basis, ham_expansion, pseudop
+      USE srb_types, ONLY : basis, ham_expansion, pseudop, kproblem
       TYPE(ham_expansion),      INTENT(in)  :: ham
       REAL(DP),                 INTENT(in)  :: qpoint(3)
       type(pseudop), intent(inout) :: pp
       integer, intent(in)     :: spin
-      COMPLEX(DP), INTENT(OUT) :: ham_matrix(:,:)
+      type(kproblem), INTENT(INOUT) :: Hk
     end subroutine build_h_matrix
 
     subroutine build_projs(opt_basis, xq, nq, pp)
@@ -296,7 +303,8 @@ CONTAINS
   SUBROUTINE init_srb()
   !-----------------------------------------------------------------------
     !_
-    USE mp_global, ONLY: intra_bgrp_comm
+    USE mp_global, ONLY: nproc_pool, intra_pool_comm, intra_bgrp_comm
+    USE mp_global, ONLY: mp_start_pots
     USE mp, ONLY: mp_size, mp_rank, mp_get_comm_null
     use control_flags, only : tr2
 
@@ -349,9 +357,10 @@ CONTAINS
     !call init_splines()
 
     call scalapack_init()
-
+    call mp_start_pots(nproc_pool, intra_pool_comm)
 
   END SUBROUTINE init_srb
+
 END MODULE srb
 
 

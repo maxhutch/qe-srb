@@ -2,11 +2,13 @@ subroutine build_s_matrix(pp, q, Hk)
   USE kinds, ONLY : DP
 
   use srb_types, only : pseudop, kproblem
+  use srb_matrix, only : block_outer, add_diag
   USE uspp, only : nkb, qq
   use uspp_param, only : nh, nhm
   use ions_base, only : nat, ityp, nsp
   use scalapack_mod, only : scalapack_localindex
   use buffers, only : open_buffer, save_buffer, get_buffer, close_buffer
+  use mp_global, only : nproc_pot
 
   IMPLICIT NONE
 
@@ -26,14 +28,6 @@ subroutine build_s_matrix(pp, q, Hk)
 
   integer,save :: old_size_s_matrix
 
-#define __SSDIAG
-#ifndef __SSDIAG
-  complex(DP), allocatable :: S_tmp(:,:)
-  nbasis = size(pp%projs, 1)
-  allocate(S_tmp(nbasis, nbasis))
-  S_tmp = cmplx(0.d0, kind=DP)
-#endif
-
   nbasis = size(pp%projs, 1)
 
   ! if the save file hasn't been opened, open one
@@ -50,19 +44,18 @@ subroutine build_s_matrix(pp, q, Hk)
     old_size_s_matrix=size(Hk%S)
   endif
 
+  ! if saved, just reload it
   if (q > 0) then
     call get_buffer(Hk%S, size(Hk%S), pp%s_unit, q)
     return
   endif
 
-  allocate(S_half(nbasis, nkb), rwork(2*nhm*nbasis))
-
-
   ! Make <B|S|B>
+  allocate(S_half(nbasis, pp%nkb_l), rwork(2*nhm*nbasis))
   Hk%S = cmplx(0.d0, kind=DP)
   ioff = 1 !index offset
   do t = 1, nsp
-   do a = 1, nat
+   do a = 1, nat, nproc_pot
     if (ityp(a) /= t) cycle
     ! Do the left side of the transformation
     call zlacrm(nbasis, nh(t), &
@@ -74,35 +67,13 @@ subroutine build_s_matrix(pp, q, Hk)
    enddo
   enddo
   ! Do the right side of the transformation, summing into Hk%S
-#ifdef __SSDIAG
-  call ZGEMM('N', 'C', nbasis, nbasis, nkb, one, &
-               S_half(:,:), nbasis, &
-               pp%projs(:,:), nbasis, zero, &
-               Hk%S(:,:), nbasis)
-#else
-  call ZGEMM('N', 'C', nbasis, nbasis, nh(t), one, &
-               S_half(:,:), nbasis, &
-               pp%projs(:,:), nbasis, zero, &
-               S_tmp(:,:), nbasis)
-#endif
+  call block_outer(nbasis, pp%nkb_l, &
+                   one,  S_half, nbasis, &
+                         pp%projs, nbasis, &
+                   zero, Hk%S, Hk%desc) 
   deallocate(S_half, rwork)
 
-#ifdef __SSDIAG
-  ! add identity to S
-  forall(i = 1:nbasis) Hk%S(i,i) = Hk%S(i,i) + one
-#else
-  do i = 1, nbasis; do j = 1, nbasis
-    call scalapack_localindex(i, j, i_l, j_l, islocal)
-    if (islocal) then
-      if (i == j) then
-        Hk%S(i_l, j_l) = S_tmp(i, j) + one
-      else
-        Hk%S(i_l, j_l) = S_tmp(i, j)
-      endif
-    endif
-  enddo; enddo
-  deallocate(S_tmp)
-#endif
+  call add_diag(nbasis, one, Hk%S, Hk%desc)
 
   call save_buffer(Hk%S, size(Hk%S), pp%s_unit, -q)
 
