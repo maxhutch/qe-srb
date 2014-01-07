@@ -4,6 +4,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   USE kinds, ONLY : DP
   use constants, only : tpi
   USE srb_types, ONLY : basis, pseudop
+  use srb_matrix, only : setup_desc
 
   use input_parameters, only : proj_tol
   USE us, ONLY : dq, tab
@@ -29,11 +30,11 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   ! locals
   integer q, q2, left, nbasis, npw, npwx, npwx_tmp, nqx, stat, vbs, fq
   integer :: a, b, t, ig, ih, i, j, jkb, jkb_old, lm
-  integer, allocatable :: igk(:), na(:), na_off(:)
+  integer, allocatable :: igk(:)
   real(DP), allocatable :: g2kin(:)
   real(DP) :: k_gamma(3)
   complex(DP), allocatable :: S(:,:,:), Stmp(:,:), sk(:)
-  complex(DP), allocatable :: buffer(:,:), vbas(:,:), vkb(:,:), vkb1z(:,:), vkb2(:,:), C(:,:)
+  complex(DP), allocatable :: buffer(:,:), vbas(:,:), vkb(:,:), vkb1z(:,:), vkb2(:,:), vkb3(:,:), C(:,:)
   complex(DP), allocatable :: projs_l(:,:)
   real(DP), allocatable :: gk (:,:), qg (:), vq (:), ylm (:,:), vkb1(:,:), sv(:)
   real(DP) :: px, ux, vx, wx, arg
@@ -47,6 +48,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   real(DP), allocatable :: rwork(:)
   integer, allocatable :: iwork(:)
   integer :: lwork, lrwork, liwork
+  integer :: counter
 
   integer,save :: old_basis_length
 
@@ -62,35 +64,49 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   k_gamma = 0.d0
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma(:), ngm, g, ecutwfc/tpiba2, npw, igk, g2kin)
-  allocate(na(ntyp), na_off(nat)); na = 0; na_off = 0
-  jkb = 0
-  do a = 1, nat
-    na(ityp(a)) = na(ityp(a)) + 1
-  enddo
-  do t = 1, ntyp
+  write(*,*) allocated(pp%desc), size(pp%desc)
+  if (.not. allocated(pp%desc)) then
+    allocate(pp%desc(ntyp))
+    allocate(pp%na(ntyp), pp%na_off(nat))
+    pp%na = 0; pp%na_off = 0
     do a = 1, nat
-      if (ityp(a) /= t) cycle
-      na_off(a) = jkb
-      jkb = jkb + nh(t)
+      pp%na(ityp(a)) = pp%na(ityp(a)) + 1
     enddo
-  enddo
-  pp%nkb_l = 0
-  do t = 1,ntyp
-    do a = 1, nat, nproc_pot
-      if (ityp(a) /= t) cycle
-      pp%nkb_l = pp%nkb_l + nh(t)
+    pp%nkb_l = 0
+    do t = 1, ntyp    
+      call setup_desc(pp%desc(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t))
+      pp%nkb_l = pp%nkb_l + pp%desc(t)%ncl 
     enddo
-  enddo
-  pp%nkb_max = pp%nkb_l
-  call mp_max(pp%nkb_max, intra_pool_comm) 
- 
+    jkb = 1
+    ! this makes assumptions about atom ordering by type
+    counter = 0
+    do t = 1, ntyp
+      do a = 1, nat
+        if (ityp(a) /= t) cycle
+        if (MOD(counter, nproc_pot) == me_pot) then
+          pp%na_off(a) = jkb
+          jkb = jkb + nh(t)
+        else
+          pp%na_off(a) = -1
+        endif
+        counter = counter + 1
+      enddo
+    enddo
+    write(*,*) "na_off: ", pp%na_off
+    pp%nkb_max = pp%nkb_l
+    call mp_max(pp%nkb_max, intra_pool_comm) 
+  endif
+
+  if (allocated(pp%projs)) deallocate(pp%projs)
+  allocate(pp%projs(nbasis,pp%nkb_l))
+
   allocate (ylm(npw, (lmaxkb + 1)**2), gk(3, npw), qg(npw), vq(npw))
 
   ! if the projector save file hasn't been opened, open one
   if (pp%projs_unit < 0) then
     pp%projs_unit = - pp%projs_unit
-    call open_buffer(pp%projs_unit, 'projs', opt_basis%length * pp%nkb_max, 1, info)
-    old_basis_length = opt_basis%length
+    call open_buffer(pp%projs_unit, 'projs', nbasis * pp%nkb_max, 1, info)
+    old_basis_length = nbasis
   endif
 
   ! if we have a longer buffer - adjust size of file dynamically
@@ -110,7 +126,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     allocate(vbas(npw, nhm*nq))
     allocate(sv(nhm*nq))
     do t = 1, ntyp ! loop over types
-      if (na(t) < THRESH) cycle
+      if (pp%na(t) < THRESH) cycle
       vbs = 0
       do q = 1, nq ! loop over aux q-grid
         qtmp = xq(:,q) - floor(xq(:,q))
@@ -197,41 +213,49 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   allocate(vkb1(npw, nhm), vkb1z(npw, nhm))
   jkb_old = 0
   types: do t = 1, ntyp ! loop over types
-    if (na(t) < THRESH) then
-      allocate(vkb2(npw, nkb))
+    if (pp%na(t) < THRESH) then
+      allocate(vkb2(npw, nh(t)*pp%na(t)), vkb3(nbasis, nh(t)*pp%na(t)))
       do q = 1, nq
         call start_clock('  proj_init')
         qtmp = xq(:,q) - floor(xq(:,q))
         qcart = matmul( bg, qtmp )
 
         npwx_tmp = npwx_int; npwx_int = npw
-        call init_us_2_srb(npw, igk, qcart, 0, vkb2)
+        call init_us_2_srb(npw, igk, qcart, t, vkb2)
         npwx_int = npwx_tmp
         call stop_clock('  proj_init')
 
         call start_clock('  proj_save')
-        if (t > 1 .and. MOD(q-1, npot) == my_tub_id) then
-          call get_buffer(pp%projs, nbasis*pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
+        if (t > 1 .and. MOD(q-1, npot) == my_pot_id) then
+          call get_buffer(pp%projs, nbasis*pp%nkb_l, pp%projs_unit, (q-1)/npot+1)
         endif
         call stop_clock('  proj_save')
 
         call start_clock('  proj_gemm')
-        call ZGEMM('C', 'N', nbasis, nh(t)*na(t), npw, one, &
+        call ZGEMM('C', 'N', nbasis, nh(t)*pp%na(t), npw, one, &
                    opt_basis%elements, npw, &
-                   vkb2(1:npw,jkb_old+1:jkb_old+nh(t)*na(t)), npw, zero, &
-                   pp%projs(1:nbasis,jkb_old+1:jkb_old+nh(t)*na(t)), nbasis)
-        call mp_sum(pp%projs(1:nbasis,jkb_old+1:jkb_old+nh(t)*na(t)), intra_pool_comm )
+                   vkb2, npw, zero, &
+                   vkb3, nbasis)
+        call mp_sum(vkb3, intra_pool_comm )
+        jkb = 1
+        do a = 1, nat
+          if (ityp(a) /= t) cycle
+          if (pp%na_off(a) > 0) then
+            pp%projs(:,pp%na_off(a):pp%na_off(a)+nh(t)-1) = vkb3(:,jkb:jkb+nh(t)-1)
+          endif
+          jkb = jkb + nh(t)
+        enddo
         call stop_clock('  proj_gemm')
         ! save!
         call start_clock('  proj_save')
-        if (MOD(q-1, npot) == my_tub_id) then
-          call save_buffer(pp%projs, nbasis * pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
+        if (MOD(q-1, npot) == my_pot_id) then
+          call save_buffer(pp%projs, nbasis * pp%nkb_l, pp%projs_unit, (q-1)/npot+1)
         endif
         call stop_clock('  proj_save')
 
       enddo 
-      jkb_old = jkb_old + nh(t) * na(t)
-      deallocate(vkb2)
+      jkb_old = jkb_old + nh(t) * pp%na(t)
+      deallocate(vkb2, vkb3)
       cycle
     endif
 
@@ -314,7 +338,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       
       call start_clock('  proj_save')
       if (t > 1 .and. MOD(q-1, npot) == my_tub_id) then
-        call get_buffer(pp%projs, nbasis*pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
+        call get_buffer(pp%projs, nbasis*pp%nkb_l, pp%projs_unit, (q-1)/nproc_pool+1)
       else
         pp%projs = cmplx(0.d0, kind=DP)
       endif
@@ -332,22 +356,22 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
           call zgemv('N', nbasis, vbs, prefac, &
                      S(:,:,(a-1)/nproc_pool+1), nbasis, &
                      vkb2(:,ih), 1, zero, &
-                     pp%projs(:,na_off(a) + ih), 1)
+                     pp%projs(:,pp%na_off(a) + ih), 1)
         enddo
       enddo atom
 !      write(*,*) jkb_old, nh(t), na(t), nkb
-      call mp_sum(pp%projs(:,jkb_old+1:jkb_old+nh(t)*na(t)), intra_pool_comm)
+      call mp_sum(pp%projs(:,jkb_old+1:jkb_old+nh(t)*pp%na(t)), intra_pool_comm)
       call stop_clock('  apply_S')
 
       ! save!
       call start_clock('  proj_save')
       if (MOD(q-1, npot) == my_pot_id) then
-        call save_buffer(pp%projs, nbasis * pp%nkb_max, pp%projs_unit, (q-1)/nproc_pool+1)
+        call save_buffer(pp%projs, nbasis * pp%nkb_l, pp%projs_unit, (q-1)/nproc_pool+1)
       endif
       call stop_clock('  proj_save')
 
     enddo qs2
-    jkb_old = jkb_old + nh(t) * na(t)
+    jkb_old = jkb_old + nh(t) * pp%na(t)
     deallocate(vbas)
     deallocate(S)
     deallocate(vkb2)
@@ -356,7 +380,6 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
 
   deallocate(vkb1, vkb1z, qg, vq, ylm, gk)
   deallocate(igk, g2kin)
-  deallocate(na)
 
   return
 

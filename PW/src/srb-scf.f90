@@ -26,7 +26,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   use wvfct,                only : wg, et
 
   USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list, kproblem
-  USE srb_matrix,       ONLY : grab_desc, mydesc
+  USE srb_matrix,       ONLY : setup_desc, mydesc
   USE srb,              ONLY : qpoints, basis_life, freeze_basis
   USE srb,              ONLY : use_cuda, rho_reduced 
   use srb,              ONLY : states, bstates, wgq, red_basis=>scb, ets, pp=>spp
@@ -41,7 +41,10 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   USE symme,                ONLY : sym_rho
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool, me_image
-  use scalapack_mod, only : scalapack_distrib
+  use mp_global, only : me_pot, nproc_pot
+  use scalapack_mod, only : scalapack_distrib, scalapack_blocksize
+  use scalapack_mod, only : ctx_sq, ctx_rex, ctx_rey
+  use scalapack_mod, only : nprow, npcol, myrow, mycol
   use buffers, only : get_buffer
 
   !
@@ -73,6 +76,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       real(DP), intent(inout) :: foo(:,:)
     end subroutine addusdens_g
   end interface
+  integer,external :: numroc
   !
   ! ... local variables
   !
@@ -81,7 +85,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
   complex(DP), allocatable :: evecs(:,:) !>!< eigenvectors of Hamiltonian
-  type(mydesc)             :: evecs_desc
+  type(mydesc)             :: tmp_desc, evecs_desc
   complex(DP), allocatable :: P(:,:,:), Pinv(:,:,:) !>!< Preconditioner and inverse
   complex(DP), allocatable :: rho_srb(:,:,:) !>!< Denstiy matrix in reduced basis
   real(DP), allocatable :: wr2(:), xr2(:,:) !>!< copies of k-points and weights
@@ -93,6 +97,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   ! tmps and workspace
   complex(DP) :: ztmp
   INTEGER :: i, j, k, q, s
+  integer :: nblock, info
   complex(DP), pointer :: ptr(:,:) => NULL()
   integer, allocatable :: ipiv(:)
   complex(DP), allocatable :: work(:)
@@ -137,14 +142,20 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   basis_age = basis_age + 1
   skip = ((basis_age < basis_life - 1) .or. sc_error <  freeze_Basis)
 
+  ! set up the blacs descriptors
+  call setup_desc(h_coeff%desc, red_basis%length, red_basis%length)
+  Hk%desc = h_coeff%desc
+  states%desc = h_coeff%desc
+
+  call setup_desc(states%desc, red_basis%length, nbnd, red_basis%length, 16)
+
+  if (okvan) then
+    call setup_desc(bstates%desc, nkb, nbnd, nkb, 16)
+  endif
+
   !
   ! ... Construct the local Hamiltonian
   ! 
-  call scalapack_distrib(red_basis%length, red_basis%length, h_coeff%desc%nrl, h_coeff%desc%ncl)
-  call grab_desc(h_coeff%desc)
-  call scalapack_distrib(red_basis%length, nbnd, evecs_desc%nrl, evecs_desc%ncl)
-  call grab_desc(evecs_desc)
-
   call start_clock( ' build_h_coeff' )
   call build_h_coeff(red_basis, V_rs(:,:), ecut_srb, nspin, h_coeff, basis_age /= 0)
   call stop_clock( ' build_h_coeff' )
@@ -153,7 +164,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... Setup dense data structures
   !
-  Hk%desc = h_coeff%desc
   allocate(Hk%H(Hk%desc%nrl, Hk%desc%ncl))
   allocate(evecs(red_basis%length, nbnd))
   if (allocated(energies)) deallocate(energies)
@@ -161,10 +171,10 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   energies = 0.d0
 
   states%nk = qpoints%nred * nspin
-  allocate(pp%projs(red_basis%length, nkb))
   if (okvan) then
     allocate(Hk%S(Hk%desc%nrl,Hk%desc%ncl), S_matrix2(Hk%desc%nrl,Hk%desc%ncl))
     pp%us = .true.
+    Hk%generalized = .true.
     bstates%nk = qpoints%nred * nspin
   else
     bstates%nk = 0
@@ -199,8 +209,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       call build_projs(red_basis, qpoints%xr(:,:), qpoints%nred, pp)
     endif
     call stop_clock(' build_proj')
+  else 
+    allocate(pp%projs(red_basis%length, pp%nkb_l))
   endif
-
 
   !
   ! ... main q-point loop
@@ -285,12 +296,12 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         if (okvan) then
           S_matrix2(:,:) = Hk%S(:,:)
           Hk%generalized = .true.
-          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, evecs_desc, &
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, states%desc, &
                            nbnd, meth_opt = meth)
           Hk%S(:,:) = S_matrix2(:,:) 
         else
           Hk%generalized = .false.
-          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, evecs_desc, &
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, states%desc, &
                            nbnd, meth_opt = meth)
         end if
         CALL stop_clock( ' diagonalize' )
@@ -368,7 +379,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   endif
 
   ! ... add ultra-soft correction
-  write(*,*) shape(becsum), becsum
+  !write(*,*) shape(becsum), becsum
   if (okvan)  call addusdens_g(becsum, rho%of_r)
 
   ! ... symmetrize rho(G) 

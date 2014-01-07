@@ -23,6 +23,54 @@ module srb_matrix
     desc%npcol = npcol
   end subroutine grab_desc
 
+  subroutine setup_desc(desc, nr, nc, blockr_in, blockc_in)
+    use scalapack_mod, only : myrow, mycol, nprow, npcol
+    use scalapack_mod, only :  ctx_sq, ctx_rex, ctx_rey
+    use scalapack_mod, only : scalapack_blocksize
+    use mp_global, only : nproc_pot, me_pot
+    implicit none
+    type(mydesc), intent(inout) :: desc
+    integer, intent(in) :: nr, nc
+    integer, optional, intent(in) ::  blockr_in, blockc_in
+
+    integer, external :: numroc
+    integer :: blockr, blockc
+    integer :: ctx, info
+
+    if (.not. present(blockr_in) .or. .not. present(blockc_in)) then
+      call scalapack_blocksize( blockr, 32, nr, nc, nprow, npcol )
+      blockc = blockr
+    else
+      blockc = blockc_in; blockr = blockr_in
+    endif
+    
+    if (blockr == nr) then
+      desc%nprow = 1
+      desc%npcol = nproc_pot
+      desc%myrow = 0
+      desc%mycol = me_pot
+      ctx = ctx_rey
+    else if (blockc == nc) then
+      desc%nprow = nproc_pot
+      desc%npcol = 1
+      desc%myrow = me_pot
+      desc%mycol = 0
+      ctx = ctx_rex
+    else
+      desc%nprow = nprow
+      desc%npcol = npcol
+      desc%myrow = myrow
+      desc%mycol = mycol
+      ctx = ctx_sq
+    endif
+    
+    desc%nrl = numroc( nr, blockr, desc%myrow, 0, desc%nprow )
+    desc%ncl = numroc( nc, blockc, desc%mycol, 0, desc%npcol )
+    !write(*,*) nr, nc, blockr, blockc, desc%nrl, desc%ncl
+    call descinit( desc%desc, nr, nc, blockr, blockc, 0, 0, ctx, max(1,desc%nrl), info )
+
+  end subroutine setup_desc
+
 #define CHUNK 32
   subroutine block_inner(n, k, alpha, A, lda, B, ldb, beta, C, C_desc)
 !  subroutine block_inner(n, k, A, lda, B, ldb, C, C_desc)

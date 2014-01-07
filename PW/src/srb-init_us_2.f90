@@ -84,7 +84,7 @@ subroutine init_us_2_srb (npw_, igk_, q_, typ_, vkb_)
   jkb = 0
   do nt = 1, ntyp
      if (typ_ > 0 .and. typ_ /= nt) then
-       jkb = jkb + nh(nt) * natom(nt)
+!       jkb = jkb + nh(nt) * natom(nt)
        cycle
      endif
      ! calculate beta in G-space using an interpolation table

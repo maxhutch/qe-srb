@@ -297,7 +297,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
       nbasis_trunc = nbasis_trunc + 1
     enddo
   endif
-  write(*,*) nbasis,max_basis_size,nbasis_trunc
 
   deallocate(eigU)
 
@@ -355,7 +354,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
     ptrace = sum(abs(eigU(1:nbasis-nbasis_trunc))) / sum(abs(eigU))
   endif
   if (me_pool == 0) then
-    write(*,*) "Foo?"
     write(*,'(A,I7,A,I7,A,F10.6,A)') " Made basis: ", nbasis_trunc, " of ", nks*nbnd, " elements (", abs(ptrace)*100, "% error)"
 !    write(*,*) eigU(nbasis:nbasis-nbnd:-1)/sum(abs(eigU))
   endif

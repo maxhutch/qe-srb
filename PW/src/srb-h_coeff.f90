@@ -20,7 +20,6 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   use wavefunctions_module, only: psic
   use fft_interfaces, only : fwfft, invfft
   use fft_base, only : dffts 
-  use buffers, only : get_buffer
 
   IMPLICIT NONE
 
@@ -63,6 +62,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   nbnd = opt_basis%length
   ! allocate the hamiltonian (we didn't know the size until now)
   ham%length = opt_basis%length
+
   if (.not. saved) then
     ALLOCATE(ham%con(ham%desc%nrl, ham%desc%ncl, nspin), ham%lin(3, ham%desc%nrl, ham%desc%ncl) )
     allocate(ham%kin_con(ham%desc%nrl, ham%desc%ncl))

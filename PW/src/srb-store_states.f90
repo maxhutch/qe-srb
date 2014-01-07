@@ -39,18 +39,7 @@ subroutine store_states(wfc, projs, k, states, betawfc)
     tmp => states%host_ar(:,:,k)
   endif 
 
-#ifndef __SSDIAG
-  tmp = cmplx(0.d0, kind=DP)
-  do j = 1, nbnd
-    do i = 1, nbasis
-      call scalapack_localindex(i, j, i_l, j_l, islocal)
-      if (islocal) tmp(i,j) = wfc(i_l, j_l)
-    enddo
-  enddo
-  call mp_sum(tmp, intra_pool_comm) !THIS IS SO HORRIBLE!!!
-#else
   tmp = wfc(:,1:nbnd)
-#endif
 
   if (size(states%host_ar, 3) == 1) then
     if (states%file_unit < 0) then

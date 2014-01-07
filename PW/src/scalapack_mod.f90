@@ -23,7 +23,7 @@
                        LLD_   = 9 
 ! useful variables
   integer :: nprocs, nprow, npcol
-  integer :: ctx_sq, ctx_re
+  integer :: ctx_sq, ctx_rex, ctx_rey
   integer :: iam, myrow, mycol
 
   integer :: nblock
@@ -35,10 +35,12 @@
 
 
 ! ----------------------------------------------------------------------
-  subroutine scalapack_init
+  subroutine scalapack_init(iam_in, nprocs_in)
 ! ----------------------------------------------------------------------
-
-  call blacs_pinfo( iam, nprocs )
+    implicit none
+    integer iam_in, nprocs_in
+    iam = iam_in; nprocs = nprocs_in
+!  call blacs_pinfo( iam, nprocs )
 
   call scalapack_defgrid( nprocs, nprow, npcol )
 
@@ -47,10 +49,11 @@
   call blacs_gridinfo( ctx_sq, nprow, npcol, myrow, mycol )
 !  write(*,*) "sq: ", nprow, npcol, myrow, mycol
 
-!  call blacs_get( -1, 0, ctx_re )
-!  call blacs_gridinit( ctx_re, 'c', nprocs, 1 )
-!  call blacs_gridinfo( ctx_re, nprow, npcol, myrow, mycol )
-!  write(*,*) "re: ", nprow, npcol, myrow, mycol
+  call blacs_get( -1, 0, ctx_rex )
+  call blacs_gridinit( ctx_rex, 'c', nprocs, 1 )
+
+  call blacs_get( -1, 0, ctx_rey )
+  call blacs_gridinit( ctx_rey, 'c', 1, nprocs )
 
   end subroutine scalapack_init
 
@@ -85,7 +88,7 @@
 !  nc_l = numroc( nc, nc, mycol, 0, 1 )
 !  write(*,*) nr_l, nc_l
   ! padding constants
-  call descinit( desc_re, nr, nc, nr_i, nc, 0, 0, ctx_re, nr_l, info )
+  call descinit( desc_re, nr, nc, nr_i, nc, 0, 0, ctx_rex, nr_l, info )
   end subroutine scalapack_distrib_re
 
 ! ----------------------------------------------------------------------
@@ -300,7 +303,7 @@
   integer,intent(out) :: nb
   integer,intent(in) :: nbpref, nr, nc, nprow, npcol
 
-  if (nprow == 0 .and. npcol == 0) then
+  if (nprow == 1 .and. npcol == 1) then
     nb = min(nr,nc)
     return
   endif
