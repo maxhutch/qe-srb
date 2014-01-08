@@ -67,7 +67,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   write(*,*) allocated(pp%desc), size(pp%desc)
   if (.not. allocated(pp%desc)) then
     allocate(pp%desc(ntyp))
-    allocate(pp%na(ntyp), pp%na_off(nat))
+    allocate(pp%na(ntyp), pp%na_off(nat), pp%nt_off(ntyp))
     pp%na = 0; pp%na_off = 0
     do a = 1, nat
       pp%na(ityp(a)) = pp%na(ityp(a)) + 1
@@ -79,8 +79,9 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     enddo
     jkb = 1
     ! this makes assumptions about atom ordering by type
-    counter = 0
     do t = 1, ntyp
+      counter = 0
+      pp%nt_off(t) = jkb
       do a = 1, nat
         if (ityp(a) /= t) cycle
         if (MOD(counter, nproc_pot) == me_pot) then
@@ -92,9 +93,18 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
         counter = counter + 1
       enddo
     enddo
+    pp%ntyp = ntyp
+    pp%nat  = nat
+    pp%nkb  = nkb
     write(*,*) "na_off: ", pp%na_off
+    write(*,*) "nt_off: ", pp%nt_off
     pp%nkb_max = pp%nkb_l
     call mp_max(pp%nkb_max, intra_pool_comm) 
+  else
+    ! resize nbasis
+    do t = 1, ntyp
+      call setup_desc(pp%desc(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t))
+    enddo
   endif
 
   if (allocated(pp%projs)) deallocate(pp%projs)

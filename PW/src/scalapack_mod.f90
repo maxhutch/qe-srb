@@ -23,7 +23,7 @@
                        LLD_   = 9 
 ! useful variables
   integer :: nprocs, nprow, npcol
-  integer :: ctx_sq, ctx_rex, ctx_rey
+  integer, save :: ctx_sq, ctx_rex, ctx_rey
   integer :: iam, myrow, mycol
 
   integer :: nblock

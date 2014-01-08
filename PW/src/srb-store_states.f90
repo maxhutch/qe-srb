@@ -3,9 +3,11 @@
 ! them for later use in build_dens
 !
 #define __SSDIAG
-subroutine store_states(wfc, projs, k, states, betawfc)
+subroutine store_states(wfc, pp, k, states, betawfc)
   use kinds, only : DP
+  use uspp_param, only : nh
   use srb_types, only : pseudop, nk_list
+  use srb_matrix, only : print_desc
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm
@@ -14,13 +16,14 @@ subroutine store_states(wfc, projs, k, states, betawfc)
   IMPLICIT NONE
 
   complex(DP), intent(in)    :: wfc(:,:)
-  type(pseudop), intent(in)    :: projs
+  type(pseudop), intent(in)    :: pp
   integer, intent(in)        :: k
   type(nk_list), intent(inout)   :: states
   type(nk_list), intent(inout)   :: betawfc
 
   integer :: nbasis, nbnd, nkb
   integer :: i, j, i_l, j_l
+  integer :: t
   logical :: islocal
   complex(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
   COMPLEX(DP), pointer :: tmp(:,:) => NULL(), tmp2(:,:) => NULL()
@@ -29,8 +32,7 @@ subroutine store_states(wfc, projs, k, states, betawfc)
   integer,save :: old_states_length
 
   nbasis = size(states%host_ar,  1)
-  nkb    = size(betawfc%host_ar, 1)
-  nbnd   = states%nbnd
+  nbnd   = states%desc%ncl
 
   ! check to see if we're caching to file
   if (size(states%host_ar, 3) == 1) then
@@ -58,7 +60,7 @@ subroutine store_states(wfc, projs, k, states, betawfc)
 !  if (abs(sum(dble(conjg(tmp(:,1)) * tmp(:,1))) - 1) > 1.d-6) &
 !  write(*,*) "NORM: ", sum(dble(conjg(tmp(:,1)) * tmp(:,1)))
 
-  if (projs%us) then
+  if (pp%us) then
 
   ! check to see if we're caching to file
   if (size(betawfc%host_ar, 3) == 1) then
@@ -68,17 +70,19 @@ subroutine store_states(wfc, projs, k, states, betawfc)
   endif
 
   ! produce <\beta|\psi>
-  call ZGEMM('C', 'N', nkb, nbnd, nbasis, one, &
-             projs%projs, nbasis, &
-             tmp, nbasis, zero, &
-             tmp2, nkb)
+  do t = 1, size(pp%na)
+    call pZGEMM('C', 'N', pp%nkb, states%desc%desc(4), nbasis, &
+               one,  pp%projs(1,pp%nt_off(t)), 1, 1, pp%desc(t)%desc, &
+                     tmp, 1, 1, states%desc%desc, &
+               zero, tmp2, pp%nt_off(t), 1, betawfc%desc%desc)
+  enddo
 
   if (size(betawfc%host_ar, 3) == 1) then
     if (betawfc%file_unit < 0) then
       betawfc%file_unit = 4827
-      call open_buffer(betawfc%file_unit, 'bstates', nkb*nbnd, 1, stat)
+      call open_buffer(betawfc%file_unit, 'bstates', pp%nkb_l*nbnd, 1, stat)
     endif  
-    call save_buffer(tmp2, nkb*nbnd, betawfc%file_unit, k)
+    call save_buffer(tmp2, pp%nkb_l*nbnd, betawfc%file_unit, k)
   endif
 
   endif

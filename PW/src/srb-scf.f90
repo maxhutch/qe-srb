@@ -145,12 +145,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   ! set up the blacs descriptors
   call setup_desc(h_coeff%desc, red_basis%length, red_basis%length)
   Hk%desc = h_coeff%desc
-  states%desc = h_coeff%desc
 
-  call setup_desc(states%desc, red_basis%length, nbnd, red_basis%length, 16)
+  call setup_desc(states%desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
 
   if (okvan) then
-    call setup_desc(bstates%desc, nkb, nbnd, nkb, 16)
+    call setup_desc(bstates%desc, nkb, nbnd, nkb, min(16,nbnd))
   endif
 
   !
@@ -165,7 +164,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   ! ... Setup dense data structures
   !
   allocate(Hk%H(Hk%desc%nrl, Hk%desc%ncl))
-  allocate(evecs(red_basis%length, nbnd))
+  allocate(evecs(states%desc%nrl, states%desc%nrl))
   if (allocated(energies)) deallocate(energies)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
   energies = 0.d0
@@ -186,15 +185,15 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   if (associated(states%host_ar)) deallocate(states%host_ar)
   if (associated(bstates%host_ar)) deallocate(bstates%host_ar)
   if (io_level < 1) then
-    allocate(states%host_ar(red_basis%length, states%nbnd, states%nk+nproc_pool))
+    allocate(states%host_ar(states%desc%nrl, states%desc%ncl, states%nk+nproc_pool))
     if (bstates%nk == 0) then 
-      allocate(bstates%host_ar(nkb, bstates%nbnd, 0))
+      allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, 0))
     else 
-      allocate(bstates%host_ar(nkb, bstates%nbnd, bstates%nk+nproc_pool))
+      allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, bstates%nk+nproc_pool))
     endif
   else
-    allocate(states%host_ar(red_basis%length, states%nbnd, 1))
-    allocate(bstates%host_ar(nkb, bstates%nbnd, min(bstates%nk,1)))
+    allocate(states%host_ar(states%desc%nrl, states%desc%ncl, 1))
+    allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, min(bstates%nk,1)))
   endif
 
   !

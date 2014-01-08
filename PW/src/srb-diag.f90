@@ -106,8 +106,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
                    work, lwork, rwork, lrwork, iwork, liwork, &
                    ifail, iclustr, gap, ierr)
       if (ierr /= 0) write(*,*) "zhegvx error: ", ierr
-!      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs_desc%desc, 1, 1, evecs_desc%desc, Hk%desc%desc(2), ierr)
-      evecs = z(:,1:num)
+      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs, 1, 1, evecs_desc%desc, Hk%desc%desc)
       deallocate(z)
       deallocate(work, rwork, iwork)
       deallocate(ifail, iclustr, gap)
@@ -154,7 +153,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
                   z, 1, 1, Hk%desc%desc, &
                   work, lwork, rwork, lrwork, iwork, liwork, &
                   ifail, iclustr, gap, ierr) 
-      evecs = z(:,1:num)
+      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs, 1, 1, evecs_desc%desc, Hk%desc%desc)
       deallocate(z)
       deallocate(ifail, iclustr, gap)
       deallocate(work, rwork, iwork)

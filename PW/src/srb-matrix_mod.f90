@@ -23,6 +23,17 @@ module srb_matrix
     desc%npcol = npcol
   end subroutine grab_desc
 
+  subroutine print_desc(desc)
+    implicit none
+    type(mydesc), intent(in) :: desc
+    write(*,'(A,4(I2,A),6(I6,A),I3)') "desc: (",desc%myrow,",",desc%mycol,") in (", &
+                                           desc%nprow,",",desc%npcol,") has [", &
+                                           desc%nrl,",",desc%ncl,"] of [", &
+                                           desc%desc(3),",",desc%desc(4),"] in [",&
+                                           desc%desc(5),",",desc%desc(6),"] on ctx ",&
+                                           desc%desc(2)
+  end subroutine print_desc
+
   subroutine setup_desc(desc, nr, nc, blockr_in, blockc_in)
     use scalapack_mod, only : myrow, mycol, nprow, npcol
     use scalapack_mod, only :  ctx_sq, ctx_rex, ctx_rey

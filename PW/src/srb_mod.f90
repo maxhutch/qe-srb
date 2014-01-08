@@ -50,11 +50,14 @@ module srb_types
     INTEGER                   :: s_unit = -3998
     integer                   :: b_unit = -3999
     integer                   :: b_size(16)
+    integer                   :: ntyp
+    integer                   :: nat
     INTEGER                   :: nkb
     INTEGER                   :: nkb_l
     INTEGER                   :: nkb_max
     integer, allocatable      :: na(:)
     integer, allocatable      :: na_off(:)
+    integer, allocatable      :: nt_off(:)
     INTEGER                   :: first_atom
     logical                   :: us = .false.
   END TYPE pseudop
@@ -249,11 +252,11 @@ MODULE srb
       REAL(DP), INTENT(OUT) :: energies(:)
     end subroutine solve_system_cuda
 
-    subroutine store_states(wfc, projs, k, states, betawfc)
+    subroutine store_states(wfc, pp, k, states, betawfc)
       use kinds, only : DP
       use srb_types, only : pseudop, nk_list
       complex(DP), intent(in)    :: wfc(:,:)
-      type(pseudop), intent(in)    :: projs
+      type(pseudop), intent(in)    :: pp
       integer, intent(in) :: k
       type(nk_list), intent(inout)   :: states
       type(nk_list), intent(inout)   :: betawfc
