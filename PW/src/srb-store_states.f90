@@ -71,7 +71,7 @@ subroutine store_states(wfc, pp, k, states, betawfc)
 
   ! produce <\beta|\psi>
   do t = 1, size(pp%na)
-    call pZGEMM('C', 'N', pp%nkb, states%desc%desc(4), nbasis, &
+    call pZGEMM('C', 'N', pp%na(t)*nh(t), states%desc%desc(4), nbasis, &
                one,  pp%projs(1,pp%nt_off(t)), 1, 1, pp%desc(t)%desc, &
                      tmp, 1, 1, states%desc%desc, &
                zero, tmp2, pp%nt_off(t), 1, betawfc%desc%desc)
