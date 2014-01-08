@@ -24,7 +24,9 @@
 ! useful variables
   integer :: nprocs, nprow, npcol
   integer, save :: ctx_sq, ctx_rex, ctx_rey
-  integer :: iam, myrow, mycol
+  integer :: iam, myrow_sq, mycol_sq
+  integer :: myrow_rex, mycol_rex
+  integer :: myrow_rey, mycol_rey
 
   integer :: nblock
   integer :: desc_sq(DLEN_), desc_re(DLEN_)
@@ -39,6 +41,7 @@
 ! ----------------------------------------------------------------------
     implicit none
     integer iam_in, nprocs_in
+    integer foo, bar
     iam = iam_in; nprocs = nprocs_in
 !  call blacs_pinfo( iam, nprocs )
 
@@ -46,14 +49,18 @@
 
   call blacs_get( -1, 0, ctx_sq )
   call blacs_gridinit( ctx_sq, 'c', nprow, npcol )
-  call blacs_gridinfo( ctx_sq, nprow, npcol, myrow, mycol )
-!  write(*,*) "sq: ", nprow, npcol, myrow, mycol
+  call blacs_gridinfo( ctx_sq, nprow, npcol, myrow_sq, mycol_sq )
+!  write(*,*) "sq: ", nprow, npcol, myrow_sq, mycol_sq
 
   call blacs_get( -1, 0, ctx_rex )
   call blacs_gridinit( ctx_rex, 'c', nprocs, 1 )
+  call blacs_gridinfo( ctx_rex, foo, bar, myrow_rex, mycol_rex )
+  if (.not. (foo == nprocs .and. bar == 1)) write(*,*) "REX odd"
 
   call blacs_get( -1, 0, ctx_rey )
   call blacs_gridinit( ctx_rey, 'c', 1, nprocs )
+  call blacs_gridinfo( ctx_rey, foo, bar, myrow_rey, mycol_rey )
+  if (.not. (bar == nprocs .and. foo == 1)) write(*,*) "REX odd"
 
   end subroutine scalapack_init
 
@@ -66,8 +73,8 @@
 
   call scalapack_blocksize( nblock, 32, nr, nc, nprow, npcol )
   ! padding constants
-  nr_l = numroc( nr, nblock, myrow, 0, nprow )
-  nc_l = numroc( nc, nblock, mycol, 0, npcol )
+  nr_l = numroc( nr, nblock, myrow_sq, 0, nprow )
+  nc_l = numroc( nc, nblock, mycol_sq, 0, npcol )
 !  write(*,*) nr_l, nc_l
 !  write(200+iam,*) ' nr = ', nr
 !  write(200+iam,*) ' nc = ', nc
@@ -84,8 +91,8 @@
   integer,intent(in) :: nr, nr_i, nc
   integer :: info
   integer :: nr_l, nc_l
-!  nr_l = numroc( nr, nr_i, myrow, 0, nprocs )
-!  nc_l = numroc( nc, nc, mycol, 0, 1 )
+!  nr_l = numroc( nr, nr_i, myrow_sq, 0, nprocs )
+!  nc_l = numroc( nc, nc, mycol_sq, 0, 1 )
 !  write(*,*) nr_l, nc_l
   ! padding constants
   call descinit( desc_re, nr, nc, nr_i, nc, 0, 0, ctx_rex, nr_l, info )
@@ -99,9 +106,9 @@
   logical,intent(out) :: islocal
   integer :: prow, pcol
 
-  call infog2l( i, j, desc_sq, nprow, npcol, myrow, mycol, li, lj, prow, pcol )
+  call infog2l( i, j, desc_sq, nprow, npcol, myrow_sq, mycol_sq, li, lj, prow, pcol )
   islocal = .false.
-  if( myrow==prow .AND. mycol==pcol ) islocal = .true.
+  if( myrow_sq==prow .AND. mycol_sq==pcol ) islocal = .true.
   
   end subroutine scalapack_localindex
 
@@ -120,8 +127,8 @@
   integer,save :: first_time=0
 
   ! workspace dimensions
-  nr_l = numroc( n, nblock, myrow, 0, nprow )
-  nc_l = numroc( n, nblock, mycol, 0, npcol )
+  nr_l = numroc( n, nblock, myrow_sq, 0, nprow )
+  nc_l = numroc( n, nblock, mycol_sq, 0, npcol )
 !  lwork = nr_l * nblock
 !  if( nprow==npcol ) then
 !    liwork = nc_l + nblock
@@ -209,8 +216,8 @@
 !    !lwork = (np0+nq0+nb)*nb+3*n+n**2
 !    !lrwork = 2*n + 2*n-2
 !    lwork = n + (np0+nq0+nb)*nb
-!    np = numroc( n, nb, myrow, iarow, nprow )
-!    nq = numroc( n, nb, mycol, iacol, npcol )
+!    np = numroc( n, nb, myrow_sq, iarow, nprow )
+!    nq = numroc( n, nb, mycol_sq, iacol, npcol )
 !    lrwork = 1+9*n+3*np*nq
 !    liwork = 7*n+8*npcol+2
 !    write(*,*) ' lwork >= ', lwork

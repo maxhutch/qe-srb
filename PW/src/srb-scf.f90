@@ -43,8 +43,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool, me_image
   use mp_global, only : me_pot, nproc_pot
   use scalapack_mod, only : scalapack_distrib, scalapack_blocksize
-  use scalapack_mod, only : ctx_sq, ctx_rex, ctx_rey
-  use scalapack_mod, only : nprow, npcol, myrow, mycol
   use buffers, only : get_buffer
 
   !
@@ -315,6 +313,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   enddo 
   call start_clock(  ' other')
   call mp_sum(energies, intra_pool_comm)
+  energies = energies / nproc_pot
   deallocate(Hk%H, Hk%S, S_matrix2, pp%projs, evecs)
 #ifdef DAVID
   deallocate(P, Pinv)

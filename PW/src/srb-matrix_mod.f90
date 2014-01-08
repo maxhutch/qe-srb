@@ -11,7 +11,7 @@ module srb_matrix
   end type mydesc
 
   contains
-
+#if 0
   subroutine grab_desc(desc)
     use scalapack_mod, only : myrow, mycol, nprow, npcol, desc_sq
     implicit none
@@ -22,7 +22,7 @@ module srb_matrix
     desc%nprow = nprow
     desc%npcol = npcol
   end subroutine grab_desc
-
+#endif
   subroutine print_desc(desc)
     implicit none
     type(mydesc), intent(in) :: desc
@@ -35,8 +35,9 @@ module srb_matrix
   end subroutine print_desc
 
   subroutine setup_desc(desc, nr, nc, blockr_in, blockc_in)
-    use scalapack_mod, only : myrow, mycol, nprow, npcol
+    use scalapack_mod, only : myrow_sq, mycol_sq, nprow, npcol
     use scalapack_mod, only :  ctx_sq, ctx_rex, ctx_rey
+    use scalapack_mod, only : myrow_rex, mycol_rex, myrow_rey, mycol_rey
     use scalapack_mod, only : scalapack_blocksize
     use mp_global, only : nproc_pot, me_pot
     implicit none
@@ -59,19 +60,19 @@ module srb_matrix
       desc%nprow = 1
       desc%npcol = nproc_pot
       desc%myrow = 0
-      desc%mycol = me_pot
+      desc%mycol = mycol_rey
       ctx = ctx_rey
     else if (blockc == nc) then
       desc%nprow = nproc_pot
       desc%npcol = 1
-      desc%myrow = me_pot
+      desc%myrow = mycol_rex
       desc%mycol = 0
       ctx = ctx_rex
     else
       desc%nprow = nprow
       desc%npcol = npcol
-      desc%myrow = myrow
-      desc%mycol = mycol
+      desc%myrow = myrow_sq
+      desc%mycol = mycol_sq
       ctx = ctx_sq
     endif
     

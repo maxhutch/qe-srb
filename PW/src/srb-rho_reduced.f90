@@ -54,6 +54,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   nk     = states%nk / nspin
 
   allocate(root(nbasis))
+  allocate(tmp(states%desc%nrl, states%desc%ncl))
 
   trace = 0.
   do k = 1+me_pool, nk, nproc_pool
@@ -73,6 +74,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   ! ... here we sum for each k point the contribution
   ! ... of the wavefunctions to the charge
 
+    
     max_band = 1
     do ibnd = 1, nbnd
       if (wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk) < W_TOL) exit
@@ -95,6 +97,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
                  ptr(:, ibnd), nbasis, one, &
                  rho(:,:,spin), nbasis)
     enddo
+
    enddo
   enddo
   call mp_sum(rho, intra_pool_comm)

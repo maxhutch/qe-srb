@@ -12,7 +12,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE srb_types, ONLY : basis, kmap
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
-  use srb_matrix, only : mydesc, block_inner, grab_desc
+  use srb_matrix, only : mydesc, block_inner, setup_desc
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -311,11 +311,11 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   !=====================
   ! constuct the overlap matrix
   nbasis = nbnd * nks ! global array size
-  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! find local array sizes
-  allocate(S_l(nbasis_lr, nbasis_lc), B_l(nbasis_lr, nbasis_lc), eigU(nbasis))
+  call setup_desc(S_desc, nbasis, nbasis)
+  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! setup desc in scalapack_mod
+  allocate(S_l(S_desc%nrl, S_desc%ncl), B_l(S_desc%nrl, S_desc%ncl), eigU(nbasis))
   S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
 
-  call grab_desc(S_desc)
   call block_inner(nbnd*nks, ngk_gamma, &
                    one,  evc_all, npwx_tmp, &
                          evc_all, npwx_tmp, &

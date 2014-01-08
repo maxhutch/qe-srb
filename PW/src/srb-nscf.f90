@@ -38,7 +38,7 @@
   use srb_types, only : basis, ham_expansion, pseudop, kproblem
   use srb, only : build_basis, build_h_coeff, build_h_matrix, diagonalize
   use srb, only : build_projs, build_projs_reduced, load_projs, build_s_matrix
-  use srb_matrix, only : mydesc, grab_desc
+  use srb_matrix, only : mydesc, setup_desc
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool
   use scalapack_mod, only : scalapack_distrib
@@ -88,10 +88,11 @@
   call stop_clock( ' build_red_basis' )
 
   ! Construct the Hamiltonian
-  call scalapack_distrib(red_basis%length, red_basis%length, ham%desc%nrl, ham%desc%ncl)
-  call grab_desc(ham%desc)
-  call scalapack_distrib(red_basis%length, nbnd, evecs_desc%nrl, evecs_desc%ncl)
-  call grab_desc(evecs_desc)
+  ! set up the blacs descriptors
+  call setup_desc(ham%desc, red_basis%length, red_basis%length)
+  Hk%desc = ham%desc
+
+  call setup_desc(evecs_desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
 
   call start_clock( ' build_h_coeff' )
   write(*,*) "making coeffs"
