@@ -12,7 +12,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE srb_types, ONLY : basis, kmap
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
-  use srb_matrix, only : mydesc, block_inner, setup_desc
+  use srb_matrix, only : dmat, setup_dmat, block_inner2, diag, pool_scope, serial_scope, print_dmat
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -93,14 +93,15 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   real(DP) :: inv_norm
   integer :: nbasis, nbasis_trunc, nbasis_lr, nbasis_lc
   integer :: i, j, ij, k, k1, k2, l, iband, jband, i_l, j_l
-  integer :: a, b, c
-  integer :: x, y, z
+!  integer :: a, b, c
+!  integer :: x, y, z
   logical :: trivial, islocal
   ! shortcuts
   integer :: nks_orig, nks, nbnd, npw, igwx
   COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0,kind=DP)
   integer, allocatable, save :: shuffle(:,:)
-  type(mydesc) :: S_desc
+!  type(mydesc) :: S_desc
+  type(dmat) :: S, B, Z
   nbnd = size(evc_int,2)
 
   call start_clock('  mirrors')
@@ -311,22 +312,29 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   !=====================
   ! constuct the overlap matrix
   nbasis = nbnd * nks ! global array size
-  call setup_desc(S_desc, nbasis, nbasis)
-  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! setup desc in scalapack_mod
-  allocate(S_l(S_desc%nrl, S_desc%ncl), B_l(S_desc%nrl, S_desc%ncl), eigU(nbasis))
-  S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
+  call setup_dmat(S, nbasis, nbasis, scope_in = pool_scope)
+  call print_dmat(S)
+  call setup_dmat(B, nbasis, nbasis, scope_in = pool_scope)
+  call print_dmat(B)
+!  call setup_desc(S_desc, nbasis, nbasis)
+!  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! setup desc in scalapack_mod
+!  allocate(S_l(S_desc%nrl, S_desc%ncl), B_l(S_desc%nrl, S_desc%ncl), eigU(nbasis))
+  allocate(eigU(nbasis))
+!  S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
+  eigU = 0.d0 
 
-  call block_inner(nbnd*nks, ngk_gamma, &
+  call block_inner2(nbnd*nks, ngk_gamma, &
                    one,  evc_all, npwx_tmp, &
                          evc_all, npwx_tmp, &
-                   zero, S_l, S_desc)
+                   zero, S)
 
   call stop_clock('  make_S')
 
   !============================
   ! diagonalize it
   call start_clock('  diag_S')
-  call scalapack_diag( nbasis, S_l, eigU, B_l )
+  call diag(S, eigU, B)
+!  call scalapack_diag( nbasis, S%dat, eigU, B_l )
   call stop_clock('  diag_S')
   !============================
   ! Truncate it
@@ -361,9 +369,25 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   ! Express the basis in the gamma-point pw basis <G|B>
   call start_clock('  expand')
   allocate(opt_basis%elements(ngk_gamma, nbasis_trunc)); opt_basis%length = nbasis_trunc
-  allocate(ztmp(nbasis, nbasis_trunc))
 
+#if 1
+  call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
+  call print_dmat(Z)
+
+  call pzgemr2d(nbasis, nbasis_trunc, &
+                B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
+                Z%dat, 1, 1, Z%desc, &
+                B%desc(2))
+
+  ! transform <G|psi><psi|B>
+  call ZGEMM('N', 'N', ngk_gamma, nbasis_trunc, nbasis, one, & 
+             evc_all, npwx_tmp, &
+             Z%dat, nbasis, zero, &
+             opt_basis%elements, ngk_gamma)
+
+#else
   ! expand the full <psi|B>
+  allocate(ztmp(nbasis, nbasis_trunc))
   ztmp = cmplx(0.d0, kind=DP)
   do j = 1, nbasis_trunc
     do i = 1, nbasis
@@ -393,8 +417,9 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
 
   deallocate(S_l)
   deallocate(B_l)
-  deallocate(eigU)
   deallocate(ztmp)
+#endif
+  deallocate(eigU)
   deallocate(evc_all)
 
   ! Normalize 
