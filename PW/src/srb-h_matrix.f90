@@ -30,6 +30,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   COMPLEX(DP), allocatable :: V_half(:,:)
   real(DP), allocatable :: rwork(:)
   integer :: i, j, i_l, j_l, a, t, ioff
+  integer :: nbasis
   logical :: islocal, info
 
 
@@ -43,13 +44,14 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   tqvec = matmul(bg, sqvec) * tpiba ! redefine consistent cartesian coordinates
   zqvec = cmplx(tqvec, kind=DP) ! caste up to complex
   zqvec2 = cmplx(dot_product(tqvec, tqvec), kind = DP ) !likewise with the square
+  nbasis = ham%con(1)%desc(3)
 
-  Hk%H = ham%con(:,:,spin)
-  call zgemv('T', 3, size(ham%con(:,:,1)), &
+  Hk%H = ham%con(spin)%dat
+  call zgemv('T', 3, size(ham%con(1)%dat), &
              cmplx(2.d0, kind=DP),  ham%lin, 3, &
                    zqvec,   1, &
              one, Hk%H, 1)
-  call add_diag(ham%length, zqvec2, Hk%H, Hk%desc)
+  call add_diag(nbasis, zqvec2, Hk%H, Hk%desc)
 
   ! ===========================================================================
   ! Add non-local component  V^{NL} = \sum <\beta|D|\beta>
@@ -59,26 +61,26 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   endif
 
   if (pp%us) then
-    allocate(V_half(ham%length, nkb))
-    allocate(rwork(2*nhm*ham%length))
+    allocate(V_half(nbasis, nkb))
+    allocate(rwork(2*nhm*nbasis))
     ioff = 1 !index offset
     do t = 1, nsp
      do a = 1, nat, nproc_pot
        if (ityp(a) /= t) cycle
        ! Do the left side of the transformation
-       call zlacrm(ham%length, nh(t), &
-                   pp%projs(:,ioff:ioff+nh(t)), ham%length, &
+       call zlacrm(nbasis, nh(t), &
+                   pp%projs(:,ioff:ioff+nh(t)), nbasis, &
                    deeq(:,:,a,spin), nhm, &
-                   V_half(:, ioff:ioff+nh(t)), ham%length, &
+                   V_half(:, ioff:ioff+nh(t)), nbasis, &
                    rwork)
        ioff = ioff + nh(t)
      enddo
     enddo
 
     ! Do the right side of the transformation, summing into S_matrix
-    call block_outer(ham%length, pp%nkb_l, &
-                     one,  V_half, ham%length, &
-                           pp%projs, ham%length, &
+    call block_outer(nbasis, pp%nkb_l, &
+                     one,  V_half, nbasis, &
+                           pp%projs, nbasis, &
                      one, Hk%H, Hk%desc)
   deallocate(V_half)
   deallocate(rwork)
@@ -90,9 +92,9 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
    do a = 1, nat
     if (ityp(a) /= t) cycle
     do i = 1, nh(t)
-      call zherk('U', 'N', ham%length, 1, cmplx(1./deeq(i,i,a,spin)), &
-                 pp%projs(:,ioff+i-1), ham%length, one, &
-                 Hk%H, ham%length)
+      call zherk('U', 'N', nbasis, 1, cmplx(1./deeq(i,i,a,spin)), &
+                 pp%projs(:,ioff+i-1), nbasis, one, &
+                 Hk%H, nbasis)
     enddo
     ioff = ioff + nh(t)
    enddo

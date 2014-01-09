@@ -38,7 +38,7 @@
   use srb_types, only : basis, ham_expansion, pseudop, kproblem
   use srb, only : build_basis, build_h_coeff, build_h_matrix, diagonalize
   use srb, only : build_projs, build_projs_reduced, load_projs, build_s_matrix
-  use srb_matrix, only : mydesc, setup_desc
+  use srb_matrix, only : mydesc, setup_desc, setup_dmat
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool
   use scalapack_mod, only : scalapack_distrib
@@ -54,7 +54,7 @@
   INTEGER :: iter = 1, i, ik, q, j, s, meth = 0
   REAL(DP) :: dr2 = 0.d0
 !  TYPE(basis) :: red_basis  !>!< optimal basis; looks like wavefunctions
-  TYPE(ham_expansion) :: ham
+  TYPE(ham_expansion) :: h_coeff
   TYPE(pseudop) :: projs
   TYPE(kproblem) :: Hk
   complex(DP), allocatable :: S_matrix2(:,:), evecs(:,:)
@@ -89,14 +89,18 @@
 
   ! Construct the Hamiltonian
   ! set up the blacs descriptors
-  call setup_desc(ham%desc, red_basis%length, red_basis%length)
-  Hk%desc = ham%desc
+  if (.not. allocated(h_coeff%con)) allocate(h_coeff%con(nspin))
+  do s = 1,nspin
+    call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length)
+  enddo
+  call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length)
+  call setup_desc(Hk%desc, red_basis%length, red_basis%length)
 
   call setup_desc(evecs_desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
 
   call start_clock( ' build_h_coeff' )
   write(*,*) "making coeffs"
-  call build_h_coeff(red_basis, V_rs, ecut_srb, nspin, ham)
+  call build_h_coeff(red_basis, V_rs, ecut_srb, nspin, h_coeff)
   write(*,*) "made coeffs"
   call stop_clock(' build_h_coeff')
 
@@ -140,7 +144,7 @@
     end if
     spin: do s = 1, nspin
       CALL start_clock(' build_mat' )
-      call build_h_matrix(ham, qpoints%xr(:,q), projs, s, Hk)
+      call build_h_matrix(h_coeff, qpoints%xr(:,q), projs, s, Hk)
       CALL stop_clock(' build_mat' )
 
       CALL start_clock( ' diagonalize' )
@@ -156,7 +160,7 @@
     enddo spin
   enddo
   call mp_sum(energies, intra_pool_comm)
-  deallocate(Hk%H, ham%con, ham%lin, Hk%S, S_matrix2, projs%projs)
+  deallocate(Hk%H, h_coeff%lin, Hk%S, S_matrix2, projs%projs)
   !
   WRITE( stdout, 9000 ) get_clock( 'PWSCF' )
   !

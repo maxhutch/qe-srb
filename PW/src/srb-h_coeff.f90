@@ -10,7 +10,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   USE mp, ONLY: mp_sum, mp_barrier
 
   USE srb_types, ONLY : basis, ham_expansion
-  USE srb_matrix, only : block_inner
+  USE srb_matrix, only : block_inner2, dmat, copy_dmat
   USE srb, ONLY : decomp_size
 
   USE cell_base, ONLY : tpiba2, tpiba
@@ -46,6 +46,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   logical ::  saved
   COMPLEX(DP), parameter :: zero = cmplx(0.d0, KIND=DP), one = cmplx(1.d0, kind=DP)
   COMPLEX(DP), allocatable :: ctmp(:,:)
+  type(dmat) :: tmp_mat
   ! indexes 
   integer :: ip ! processor index
   integer :: i, j, ij, ixyz, k, s
@@ -61,11 +62,9 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   ! ============================================================
   nbnd = opt_basis%length
   ! allocate the hamiltonian (we didn't know the size until now)
-  ham%length = opt_basis%length
 
   if (.not. saved) then
-    ALLOCATE(ham%con(ham%desc%nrl, ham%desc%ncl, nspin), ham%lin(3, ham%desc%nrl, ham%desc%ncl) )
-    allocate(ham%kin_con(ham%desc%nrl, ham%desc%ncl))
+    ALLOCATE(ham%lin(3, size(ham%con(1)%dat,1), size(ham%con(1)%dat,2)) )
   endif
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma, ngm, g, ecut_srb/tpiba2, npw, igk, g2kin) ! re-order wrt |G+k| (k = 0 in this case)
@@ -79,37 +78,39 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
 
   ! constant term
   if (saved) then
-    forall (s = 1:nspin) ham%con(:,:,s) = ham%kin_con(:,:)
+    forall (s = 1:nspin) ham%con(s)%dat = ham%kin_con%dat
   else
     call start_clock( '   part1' )
     allocate(buffer(npw, nbnd))
 
     forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g2kin(i)
-    ham%con(:,:,1) = zero
-    call block_inner(nbnd, npw, &
+    call block_inner2(nbnd, npw, &
                      one,  opt_basis%elements, npw, &
                            buffer,             npw, &
-                     zero, ham%con(:,:,1),     ham%desc)
+                     zero, ham%con(1))
 
-    if (nspin == 2) ham%con(:,:,2) = ham%con(:,:,1)
-    ham%kin_con = ham%con(:,:,1)
+    if (nspin == 2) ham%con(2)%dat = ham%con(1)%dat
+    ham%kin_con%dat = ham%con(1)%dat
 
     deallocate(buffer)
     call stop_clock( '   part1' )
   endif
   if (.not. saved) then
   ! linear term; almost the same as above except gtmp instead of g2kin
-    allocate(gtmp(ham%desc%nrl, ham%desc%ncl), buffer(npw, nbnd))
+    call copy_dmat(tmp_mat, ham%con(1))
+!    allocate(gtmp(ham%desc%nrl, ham%desc%ncl), buffer(npw, nbnd))
+    allocate(buffer(npw, nbnd))
     do ixyz = 1, 3
-      gtmp = cmplx(0.d0, kind=DP)
+!      gtmp = cmplx(0.d0, kind=DP)
       forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g(ixyz, igk(i))*tpiba
-      call block_inner(nbnd, npw, &
+      call block_inner2(nbnd, npw, &
                        one,  opt_basis%elements, npw, &
                              buffer,             npw, &
-                       zero, gtmp,               ham%desc)
-      ham%lin(ixyz,:,:) = gtmp
+                       zero, tmp_mat)
+      ham%lin(ixyz,:,:) = tmp_mat%dat
     enddo
-    deallocate(gtmp, buffer)
+!    deallocate(gtmp, buffer)
+    deallocate(buffer, tmp_mat%dat)
     call mp_sum(ham%lin, intra_pool_comm)
   endif 
   ! quadratic term is analytic (\delta(k,k) |k|^2), so we just add it in later
@@ -142,10 +143,10 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     forall (i = 1:nbl) gtmp(1:npw, i+j-1) = buffer(nls(igk(1:npw)), i)
   enddo
   !
-  call block_inner(nbnd, npw, &
+  call block_inner2(nbnd, npw, &
                    one, opt_basis%elements, npw, &
                         gtmp,               npw, &
-                   one, ham%con(:,:,s),     ham%desc)
+                   one, ham%con(s))
   enddo spin
   deallocate(buffer, gtmp)
   deallocate(igk, g2kin)

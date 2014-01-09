@@ -10,16 +10,14 @@
 module srb_types
   USE ISO_C_BINDING, only : c_ptr, C_NULL_PTR
   USE kinds, only : DP
-  USE srb_matrix, only : mydesc
+  USE srb_matrix, only : mydesc, dmat
 
   TYPE ham_expansion
-     COMPLEX(DP), ALLOCATABLE :: con(:,:,:) ! H(i,j,k) is <i|H^(0)|j> (spin k)
+     TYPE(dmat), allocatable :: con(:) 
      COMPLEX(DP), ALLOCATABLE :: lin(:,:,:) ! H(i,j) is <i|H^(0)|j>
-     COMPLEX(DP), ALLOCATABLE :: kin_con(:,:) ! constant part of kinetic energy
-     TYPE(mydesc)             :: desc
+     TYPE(dmat) :: kin_con
      TYPE(c_ptr)              :: con_d = C_NULL_PTR
      TYPE(c_ptr)              :: lin_d = C_NULL_PTR
-     INTEGER                  :: length
   END TYPE ham_expansion
   !
   TYPE kproblem

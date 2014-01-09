@@ -31,19 +31,10 @@ module srb_matrix
   integer :: ctx_r(nscope)
   integer :: ctx_c(nscope)
 
+  integer, external :: numroc
+
   contains
-#if 0
-  subroutine grab_desc(desc)
-    use scalapack_mod, only : myrow, mycol, nprow, npcol, desc_sq
-    implicit none
-    type(mydesc), intent(inout) :: desc
-    desc%desc = desc_sq
-    desc%myrow = myrow
-    desc%mycol = mycol
-    desc%nprow = nprow
-    desc%npcol = npcol
-  end subroutine grab_desc
-#endif
+
   subroutine print_desc(desc)
     implicit none
     type(mydesc), intent(in) :: desc
@@ -109,7 +100,6 @@ module srb_matrix
     integer, intent(in), optional :: scope_in
 
     integer :: mb, nb, scope, ctx, nrl, ncl, info
-    integer, external :: numroc
 
     ! default scope is pool
     if (present(scope_in)) then
@@ -155,6 +145,22 @@ module srb_matrix
     if (info .ne. 0) write(*,*) "descinit failed in srb_matrix"
 
   end subroutine setup_dmat
+
+  subroutine copy_dmat(A, B)
+    implicit none
+    type(dmat), intent(inout) :: A
+    type(dmat), intent(in) :: B
+    integer :: nrl, ncl
+    A%desc = B%desc
+    A%myrow = B%myrow
+    A%mycol = B%mycol
+    A%nprow = B%nprow
+    A%npcol = B%npcol
+    nrl = numroc(A%desc(3), A%desc(5), A%myrow, 0, A%nprow)
+    ncl = numroc(A%desc(4), A%desc(6), A%mycol, 0, A%npcol)
+    if (allocated(A%dat)) deallocate(A%dat)
+    allocate(A%dat(nrl, ncl)); A%dat = 0.d0
+  end subroutine copy_dmat
 
   subroutine setup_desc(desc, nr, nc, blockr_in, blockc_in)
     use scalapack_mod, only : myrow_sq, mycol_sq, nprow, npcol

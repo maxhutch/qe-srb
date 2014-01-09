@@ -26,7 +26,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   use wvfct,                only : wg, et
 
   USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list, kproblem
-  USE srb_matrix,       ONLY : setup_desc, mydesc
+  USE srb_matrix,       ONLY : setup_desc, mydesc, setup_dmat
   USE srb,              ONLY : qpoints, basis_life, freeze_basis
   USE srb,              ONLY : use_cuda, rho_reduced 
   use srb,              ONLY : states, bstates, wgq, red_basis=>scb, ets, pp=>spp
@@ -125,7 +125,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     basis_age = -1
     deallocate(red_basis%elements)
     if (allocated(red_basis%elem_rs)) deallocate(red_basis%elem_rs)
-    deallocate(h_coeff%con, h_coeff%lin, h_coeff%kin_con)
+    deallocate(h_coeff%lin)
     red_basis%length = -1
   endif
 
@@ -134,6 +134,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     call start_clock( ' build_red_basis' )
     call build_basis(evc, red_basis, ecut_srb)
     call stop_clock( ' build_red_basis' )
+    if (.not. allocated(h_coeff%con)) allocate(h_coeff%con(nspin))
+    do s = 1,nspin
+      call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length)
+    enddo
+    call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length)
   else
     if (me_image == 0) write(*,*) "Using a basis of length ", red_basis%length, " and age ", basis_age
   endif
@@ -141,8 +146,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   skip = ((basis_age < basis_life - 1) .or. sc_error <  freeze_Basis)
 
   ! set up the blacs descriptors
-  call setup_desc(h_coeff%desc, red_basis%length, red_basis%length)
-  Hk%desc = h_coeff%desc
+  call setup_desc(Hk%desc, red_basis%length, red_basis%length)
 
   call setup_desc(states%desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
 
