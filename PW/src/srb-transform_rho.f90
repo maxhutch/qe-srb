@@ -1,9 +1,10 @@
 #define W_TOL 0.00001
 #define BLOCK_SIZE 1024
 
-subroutine transform_rho(rho_srb, opt_basis, rho)
+subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
   use kinds, only : DP
   use srb_types, only : basis
+  use srb_matrix, only : mydesc
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -26,6 +27,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   IMPLICIT NONE
 
   COMPLEX(DP), intent(in) :: rho_srb(:,:,:)
+  type(mydesc), intent(in) :: rho_desc
   type(basis), intent(inout) :: opt_basis
   type(scf_type), intent(inout) :: rho
 

@@ -276,23 +276,27 @@ MODULE srb
       real(DP), intent(inout) :: becsum(:,:,:)
     end subroutine build_rho
 
-    subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
+    subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becsum)
       USE kinds, ONLY : DP
       use srb_types, only : nk_list
+      use srb_matrix, only : mydesc
       type(nk_list), intent(in) :: states
       type(nk_list), intent(in) :: betawfc
       REAL(DP), intent(in) :: wg(:,:)
       REAL(DP), intent(in) :: wq(:)
       integer, intent(in)   :: nspin
       COMPLEX(DP), intent(inout) :: rho(:,:,:)
+      type(mydesc), intent(in) :: rho_desc
       real(DP), intent(inout) :: becsum(:,:,:)
     end subroutine build_rho_reduced
 
-    subroutine transform_rho(rho_compact, opt_basis, rho)
+    subroutine transform_rho(rho_compact, rho_desc, opt_basis, rho)
       USE kinds, ONLY : DP
       USE srb_types, ONLY : basis
+      use srb_matrix, only : mydesc
       USE scf, ONLY : scf_type
       COMPLEX(DP), intent(inout) :: rho_compact(:,:,:)
+      type(mydesc), intent(in) :: rho_desc
       type(basis), intent(in) :: opt_basis
       type(scf_type), intent(inout) :: rho
     end subroutine transform_rho
@@ -315,6 +319,7 @@ CONTAINS
     !_
     USE mp_global, ONLY: nproc_pool, intra_pool_comm, intra_bgrp_comm
     USE mp_global, ONLY: mp_start_pots, me_pot, nproc_pot
+    use srb_matrix, only : srb_matrix_init
     USE mp, ONLY: mp_size, mp_rank, mp_get_comm_null
     use control_flags, only : tr2
 
@@ -370,6 +375,7 @@ CONTAINS
 
     call mp_start_pots(nproc_pool, intra_pool_comm)
     call scalapack_init(me_pot, nproc_pot)
+    call srb_matrix_init()
 
   END SUBROUTINE init_srb
 

@@ -355,11 +355,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     rho_srb = cmplx(0.d0, kind = DP)
     ! Build reduced density matrix <b|\rho|b'>
     call start_clock( '  reduced')
-    call build_rho_reduced(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, nspin, rho_srb, becsum)
+    call build_rho_reduced(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, nspin, rho_srb, Hk%desc, becsum)
     call stop_clock( '  reduced')
     ! Take SVD of \rho and transform to <r|\rho|r>
     call start_clock( '  trans')
-    call transform_rho(rho_srb, red_basis, rho)
+    call transform_rho(rho_srb, Hk%desc, red_basis, rho)
     call stop_clock( '  trans')
     deallocate(rho_srb)
   else

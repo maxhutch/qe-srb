@@ -1,8 +1,9 @@
 #define W_TOL 0.00001
 
-subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
+subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becsum)
   use kinds, only : DP
   use srb_types, only : basis, nk_list
+  use srb_matrix, only : mydesc, block_outer
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -30,11 +31,12 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   REAL(DP), intent(in) :: wq(:)
   integer, intent(in)   :: nspin
   COMPLEX(DP), intent(inout) :: rho(:,:,:)
+  type(mydesc), intent(in) :: rho_desc
   real(DP), intent(inout) :: becsum(:,:,:)
 
   ! locals
   integer :: npw, nbasis, nbnd, nk
-  integer :: ibnd, ir
+  integer :: ibnd, ibnd_g, ir
   complex(DP), parameter :: zero = (0.d0, 0.d0), one = (1.d0, 0.d0)
   real(DP) :: w1
   complex(DP) :: wz
@@ -48,7 +50,10 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   integer :: max_band
   complex(DP), pointer :: ptr(:,:) => NULL()
   real(DP) :: trace
+  type(mydesc) :: rdesc, sdesc
+  integer, external :: indxl2g
 
+  rdesc = states%desc
   nbasis = size(states%host_ar, 1)
   nbnd   = size(states%host_ar, 2)
   nk     = states%nk / nspin
@@ -73,8 +78,17 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   !
   ! ... here we sum for each k point the contribution
   ! ... of the wavefunctions to the charge
+#if 1
+    do ibnd = 1, nbnd
+      ibnd_g = indxl2g(ibnd, rdesc%desc(6), rdesc%mycol, rdesc%desc(8), rdesc%npcol)
+      tmp(:,ibnd) = (wg(ibnd_g, k+(spin-1)*nk) / omega) * ptr(:,ibnd)
+    enddo 
+    call block_outer(nbasis, nbnd, &
+                     one, tmp, nbasis, &
+                          ptr, nbasis, &
+                     one, rho(:,:,spin), rho_desc)
 
-    
+#else
     max_band = 1
     do ibnd = 1, nbnd
       if (wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk) < W_TOL) exit
@@ -97,7 +111,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
                  ptr(:, ibnd), nbasis, one, &
                  rho(:,:,spin), nbasis)
     enddo
-
+#endif
    enddo
   enddo
   call mp_sum(rho, intra_pool_comm)
