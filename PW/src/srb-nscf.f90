@@ -37,8 +37,8 @@
 
   use srb_types, only : basis, ham_expansion, pseudop, kproblem
   use srb, only : build_basis, build_h_coeff, build_h_matrix, diagonalize
-  use srb, only : build_projs, build_projs_reduced, load_projs, build_s_matrix
-  use srb_matrix, only : mydesc, setup_desc, setup_dmat
+  use srb, only : build_projs_reduced, load_projs, build_s_matrix
+  use srb_matrix, only : setup_dmat, dmat, pot_scope, copy_dmat
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool
   use scalapack_mod, only : scalapack_distrib
@@ -57,8 +57,8 @@
   TYPE(ham_expansion) :: h_coeff
   TYPE(pseudop) :: projs
   TYPE(kproblem) :: Hk
-  complex(DP), allocatable :: S_matrix2(:,:), evecs(:,:)
-  type(mydesc) :: evecs_desc
+  complex(DP), allocatable :: S_matrix2(:,:)
+  type(dmat) :: evecs
   real(DP), allocatable ::  energies(:,:)
   real(DP) :: ecut_srb
   character(255) :: fmtstr
@@ -94,9 +94,6 @@
     call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length)
   enddo
   call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length)
-  call setup_desc(Hk%desc, red_basis%length, red_basis%length)
-
-  call setup_desc(evecs_desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
 
   call start_clock( ' build_h_coeff' )
   write(*,*) "making coeffs"
@@ -105,29 +102,17 @@
   call stop_clock(' build_h_coeff')
 
   ! Diagonalize the Hamiltonian, producing states
-#ifdef __SSDIAG
-  allocate(Hk%H(red_basis%length, red_basis%length))
-  allocate(projs%projs(red_basis%length, nkb))
-  if (okvan) then
-    allocate(Hk%S(red_basis%length, red_basis%length), S_matrix2(red_basis%length, red_basis%length))
-    projs%us = .true.
-  else
-    allocate(Hk%S(1,1), S_matrix2(1,1))
-  end if
-#else
-  call scalapack_distrib(red_basis%length, red_basis%length, i, j)
-  allocate(Hk%H(i, j))
-  if (okvan) then
-    allocate(Hk%S(i, j), S_matrix2(i,j))
-    allocate(projs%projs(red_basis%length, nkb))
-    projs%us = .true.
-  else
-    allocate(Hk%S(1,1), S_matrix2(1,1), projs%projs(1,1))
-  end if
-#endif
-  allocate(evecs(red_basis%length, nbnd))
+  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length,min(16,nbnd),pot_scope)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
-
+  call setup_dmat(Hk%H, red_basis%length, red_basis%length)
+  if (okvan) then
+    call copy_dmat(Hk%S, Hk%H)
+    allocate(S_matrix2(size(Hk%S%dat, 1), size(Hk%S%dat,2)))
+    projs%us = .true.
+    Hk%generalized = .true.
+  else
+    allocate(S_matrix2(1,1))
+  end if
 
   if (nkb > 0) then
     call build_projs_reduced(red_basis, qpoints%xr(:,:), qpoints%nred, projs)
@@ -150,17 +135,18 @@
       CALL start_clock( ' diagonalize' )
         if (okvan) then
           Hk%generalized = .true.
-          S_matrix2(:,:) = Hk%S(:,:)
+          S_matrix2(:,:) = Hk%S%dat
         else
           Hk%generalized = .false.
         end if
-        call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, evecs_desc, &
+        call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, &
                          nbnd, meth_opt = meth)
+        if (Hk%generalized) Hk%S%dat = S_matrix2
       CALL stop_clock( ' diagonalize' )
     enddo spin
   enddo
   call mp_sum(energies, intra_pool_comm)
-  deallocate(Hk%H, h_coeff%lin, Hk%S, S_matrix2, projs%projs)
+  deallocate(h_coeff%lin, S_matrix2)
   !
   WRITE( stdout, 9000 ) get_clock( 'PWSCF' )
   !

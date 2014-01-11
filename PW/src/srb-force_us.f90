@@ -32,6 +32,7 @@ SUBROUTINE force_us_srb( forcenl )
   USE buffers,              ONLY : get_buffer
   USE becmod,               ONLY : bec_type, becp, allocate_bec_type, deallocate_bec_type
   USE mp_global,            ONLY : inter_pool_comm, intra_bgrp_comm, intra_pool_comm
+  USE mp_global,            ONLY : npot, inter_pot_comm
   USE mp,                   ONLY : mp_sum, mp_get_comm_null
   !
   IMPLICIT NONE
@@ -191,6 +192,7 @@ SUBROUTINE force_us_srb( forcenl )
        !  
        USE becmod, ONLY : calbec
        use srb, only : qpoints, states, bstates, wgq, scb, ets, spp
+       use srb_matrix, only : dmat, copy_dmat
        use gvect, only : ngm
        use cell_base, only : tpiba2, tpiba
        use wvfct, only : npwx_int => npwx
@@ -213,13 +215,14 @@ SUBROUTINE force_us_srb( forcenl )
        REAL(DP) :: ps
        INTEGER       :: ik, ipol, ibnd, ig, ih, jh, na, nt, ikb, jkb, ijkb0, &
                         is, js, ijs, s
-       COMPLEX(DP), pointer :: ptr(:,:)
        COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
        integer :: npw, npwx_tmp
+       type(dmat) :: tmp_mat
        ! counters
        !
        !
        forcenl(:,:) = 0.D0
+       if (nkb < 1) return
        !
        IF (noncolin) then
           ALLOCATE( dbecp_nc(nkb,npol,nbnd,3) )
@@ -266,29 +269,26 @@ SUBROUTINE force_us_srb( forcenl )
 !          call mp_sum(dprojs, intra_pool_comm)
         do s = 1, nspin
           ! grab the states <B|psi>
-          if (size(states%host_ar, 3) == 1) then
-            ptr => states%host_ar(:,:,1)
-            ptr = cmplx(0.d0, kind=DP)
+          call copy_dmat(tmp_mat, states%host_ar(1))
+          if (size(states%host_ar) == 1) then
             if (MOD(ik-1, nproc_pool) == me_pool) then
-              call get_buffer(ptr, scb%length*nbnd, states%file_unit, (ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
+              call get_buffer(tmp_mat%dat, scb%length*nbnd, states%file_unit, (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
             endif
           else
-            allocate(ptr(scb%length, nbnd))
-            ptr = cmplx(0.d0, kind=DP)
             if (MOD(ik-1, nproc_pool) == me_pool) then
-              ptr = states%host_ar(:,:,(ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
+              tmp_mat%dat = states%host_ar((ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)%dat
             endif
           endif
-          call mp_sum(ptr, intra_pool_comm)
+          call mp_sum(tmp_mat%dat, inter_pot_comm)
 
           ! grab the projector states <beta|psi>
-          if (size(bstates%host_ar, 3) == 0) then
+          if (size(bstates%host_ar) == 0) then
             call ZGEMM('C', 'N', nkb, nbnd, scb%length, one, &
                        dprojs(:,:,0), scb%length, &
-                       ptr, scb%length, zero, &
+                       tmp_mat%dat, scb%length, zero, &
                        becp%k, nkb)
             call mp_sum(becp%k, intra_pool_comm)
-          else if (size(bstates%host_ar, 3) == 1) then
+          else if (size(bstates%host_ar) == 1) then
             becp%k = cmplx(0.d0, kind=DP)
             if (MOD(ik-1, nproc_pool) == me_pool) then
               call get_buffer(becp%k, nkb*nbnd, bstates%file_unit, (ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
@@ -296,7 +296,7 @@ SUBROUTINE force_us_srb( forcenl )
           else
             becp%k = cmplx(0.d0, kind=DP)
             if (MOD(ik-1, nproc_pool) == me_pool) then
-              becp%k = bstates%host_ar(:,:,(ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1) ! memory leak
+              becp%k = bstates%host_ar((ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)%dat ! memory leak
             endif
           endif
           call mp_sum(becp%k, intra_pool_comm)
@@ -305,10 +305,9 @@ SUBROUTINE force_us_srb( forcenl )
           do ipol = 1, 3
           call ZGEMM('C', 'N', nkb, nbnd, scb%length, one, &
                      dprojs(:,:,ipol), scb%length, &
-                     ptr, scb%length, zero, &
+                     tmp_mat%dat, scb%length, zero, &
                      dbecp(:,:,ipol), nkb)
           enddo
-          if (size(states%host_ar, 3) /= 1) deallocate(ptr)
           DO ibnd = 1, nbnd
              ! scale the D and S matrices by the energy
              IF (noncolin) THEN

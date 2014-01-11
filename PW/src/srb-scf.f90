@@ -26,13 +26,14 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   use wvfct,                only : wg, et
 
   USE srb_types,        ONLY : basis, ham_expansion, pseudop, nk_list, kproblem
-  USE srb_matrix,       ONLY : setup_desc, mydesc, setup_dmat
+  USE srb_matrix,       ONLY : setup_dmat, dmat, copy_dmat
+  use srb_matrix,       only : pot_scope, pool_scope
   USE srb,              ONLY : qpoints, basis_life, freeze_basis
   USE srb,              ONLY : use_cuda, rho_reduced 
   use srb,              ONLY : states, bstates, wgq, red_basis=>scb, ets, pp=>spp
   USE srb, ONLY : build_basis, build_basis_cuda, build_h_coeff, build_h_matrix, diagonalize, build_rho
   USE srb, ONLY : build_h_coeff_cuda
-  USE srb, ONLY : build_projs, build_projs_reduced, load_projs, copy_pseudo_cuda, build_projs_cuda, build_s_matrix, store_states
+  USE srb, ONLY : build_projs_reduced, load_projs, copy_pseudo_cuda, build_projs_cuda, build_s_matrix, store_states
   use srb, only : solve_system_cuda
   use srb, only : build_rho_reduced, transform_rho, backload
   USE scf,                  ONLY : scf_type
@@ -41,7 +42,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   USE symme,                ONLY : sym_rho
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool, me_image
-  use mp_global, only : me_pot, nproc_pot
+  use mp_global, only : me_pot, nproc_pot, npot
   use scalapack_mod, only : scalapack_distrib, scalapack_blocksize
   use buffers, only : get_buffer
 
@@ -82,10 +83,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   TYPE(kproblem)            :: Hk !>!< Hamiltonain at a specific kpoint
   complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
-  complex(DP), allocatable :: evecs(:,:) !>!< eigenvectors of Hamiltonian
-  type(mydesc)             :: tmp_desc, evecs_desc
+  type(dmat) :: evecs !>!< eigenvectors of Hamiltonian
   complex(DP), allocatable :: P(:,:,:), Pinv(:,:,:) !>!< Preconditioner and inverse
-  complex(DP), allocatable :: rho_srb(:,:,:) !>!< Denstiy matrix in reduced basis
+  type(dmat), allocatable :: rho_srb(:) !>!< Denstiy matrix in reduced basis
   real(DP), allocatable :: wr2(:), xr2(:,:) !>!< copies of k-points and weights
   ! parameters
   integer, save :: basis_age = -1, itr_count = 0
@@ -145,15 +145,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   basis_age = basis_age + 1
   skip = ((basis_age < basis_life - 1) .or. sc_error <  freeze_Basis)
 
-  ! set up the blacs descriptors
-  call setup_desc(Hk%desc, red_basis%length, red_basis%length)
-
-  call setup_desc(states%desc, red_basis%length, nbnd, red_basis%length,min(16,nbnd))
-
-  if (okvan) then
-    call setup_desc(bstates%desc, nkb, nbnd, nkb, min(16,nbnd))
-  endif
-
   !
   ! ... Construct the local Hamiltonian
   ! 
@@ -165,21 +156,22 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... Setup dense data structures
   !
-  allocate(Hk%H(Hk%desc%nrl, Hk%desc%ncl))
-  allocate(evecs(states%desc%nrl, states%desc%nrl))
+  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length,min(16,nbnd), pot_scope)
   if (allocated(energies)) deallocate(energies)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
   energies = 0.d0
 
   states%nk = qpoints%nred * nspin
+  call setup_dmat(Hk%H, red_basis%length, red_basis%length)
   if (okvan) then
-    allocate(Hk%S(Hk%desc%nrl,Hk%desc%ncl), S_matrix2(Hk%desc%nrl,Hk%desc%ncl))
+    call copy_dmat(Hk%S, Hk%H)
+    allocate(S_matrix2(size(Hk%S%dat, 1), size(Hk%S%dat,2)))
     pp%us = .true.
     Hk%generalized = .true.
     bstates%nk = qpoints%nred * nspin
   else
     bstates%nk = 0
-    allocate(Hk%S(1,1), S_matrix2(1,1))
+    allocate(S_matrix2(1,1))
   end if
 
   ! Swapping is controled by the disk_io input param
@@ -187,15 +179,28 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   if (associated(states%host_ar)) deallocate(states%host_ar)
   if (associated(bstates%host_ar)) deallocate(bstates%host_ar)
   if (io_level < 1) then
-    allocate(states%host_ar(states%desc%nrl, states%desc%ncl, states%nk+nproc_pool))
+    allocate(states%host_ar(states%nk+npot))
+    do q = 1,states%nk+npot
+      call copy_dmat(states%host_ar(q), evecs)
+    enddo
     if (bstates%nk == 0) then 
-      allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, 0))
+      allocate(bstates%host_ar(0))
     else 
-      allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, bstates%nk+nproc_pool))
+      allocate(bstates%host_ar(bstates%nk+npot))
+      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd), pot_scope)
+      do q = 2,states%nk+npot
+        call copy_dmat(bstates%host_ar(q), bstates%host_ar(1))
+      enddo
     endif
   else
-    allocate(states%host_ar(states%desc%nrl, states%desc%ncl, 1))
-    allocate(bstates%host_ar(bstates%desc%nrl, bstates%desc%ncl, min(bstates%nk,1)))
+    allocate(states%host_ar(1))
+    call setup_dmat(states%host_ar(1), red_basis%length, nbnd, red_basis%length,min(16,nbnd), pot_scope)
+    if (bstates%nk == 0) then 
+      allocate(bstates%host_ar(0))
+    else
+      allocate(bstates%host_ar(1))
+      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd), pot_scope)
+    endif
   endif
 
   !
@@ -204,14 +209,8 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   call stop_clock(  ' other')
   if (nkb > 0 .and. basis_age == 0) then
     call start_clock(' build_proj')
-    if (.true.) then
-      call build_projs_reduced(red_basis, qpoints%xr(:,:), qpoints%nred, pp)
-    else
-      call build_projs(red_basis, qpoints%xr(:,:), qpoints%nred, pp)
-    endif
+    call build_projs_reduced(red_basis, qpoints%xr(:,:), qpoints%nred, pp)
     call stop_clock(' build_proj')
-  else 
-    allocate(pp%projs(red_basis%length, pp%nkb_l))
   endif
 
   !
@@ -295,14 +294,14 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         endif
 #endif
         if (okvan) then
-          S_matrix2(:,:) = Hk%S(:,:)
+          S_matrix2(:,:) = Hk%S%dat
           Hk%generalized = .true.
-          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, states%desc, &
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, &
                            nbnd, meth_opt = meth)
-          Hk%S(:,:) = S_matrix2(:,:) 
+          Hk%S%dat = S_matrix2(:,:) 
         else
           Hk%generalized = .false.
-          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, states%desc, &
+          call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs,  &
                            nbnd, meth_opt = meth)
         end if
         CALL stop_clock( ' diagonalize' )
@@ -311,14 +310,14 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         ! ... Compute <\b|psi> and store it and <b|psi>
         !
         CALL start_clock( ' store' )
-        call store_states(evecs, pp, (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1, states, bstates)
+        call store_states(evecs, pp, (q+(s-1)*(qpoints%nred+npot)-1)/npot + 1, states, bstates)
         CALL stop_clock( ' store' )
     enddo 
   enddo 
   call start_clock(  ' other')
   call mp_sum(energies, intra_pool_comm)
   energies = energies / nproc_pot
-  deallocate(Hk%H, Hk%S, S_matrix2, pp%projs, evecs)
+  deallocate(S_matrix2)
 #ifdef DAVID
   deallocate(P, Pinv)
   deallocate(work, ipiv)
@@ -355,20 +354,21 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   rho%of_r(:,:) = 0.D0; rho%of_g(:,:) = 0.D0; becsum = 0.d0
   if (rho_reduced) then
-    allocate(rho_srb(red_basis%length, red_basis%length, nspin))
-    rho_srb = cmplx(0.d0, kind = DP)
+    allocate(rho_srb(nspin))
+    call setup_dmat(rho_srb(1), red_basis%length, red_basis%length, scope_in = pot_scope)
+    if (nspin == 2) call copy_dmat(rho_srb(2), rho_srb(1))
     ! Build reduced density matrix <b|\rho|b'>
     call start_clock( '  reduced')
-    call build_rho_reduced(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, nspin, rho_srb, Hk%desc, becsum)
+    call build_rho_reduced(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, nspin, rho_srb, becsum)
     call stop_clock( '  reduced')
     ! Take SVD of \rho and transform to <r|\rho|r>
     call start_clock( '  trans')
-    call transform_rho(rho_srb, Hk%desc, red_basis, rho)
+    call transform_rho(rho_srb, red_basis, rho)
     call stop_clock( '  trans')
     deallocate(rho_srb)
   else
     ! Go straight to real-space (bad idea)
-    call build_rho(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, red_basis, nspin, rho, becsum)
+    !call build_rho(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, red_basis, nspin, rho, becsum)
   endif
   CALL stop_clock( ' build_rho' )
   call start_clock(  ' other')

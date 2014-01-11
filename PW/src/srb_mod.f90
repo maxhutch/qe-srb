@@ -10,7 +10,7 @@
 module srb_types
   USE ISO_C_BINDING, only : c_ptr, C_NULL_PTR
   USE kinds, only : DP
-  USE srb_matrix, only : mydesc, dmat
+  USE srb_matrix, only : dmat
 
   TYPE ham_expansion
      TYPE(dmat), allocatable :: con(:) 
@@ -21,9 +21,8 @@ module srb_types
   END TYPE ham_expansion
   !
   TYPE kproblem
-     COMPLEX(DP), allocatable :: H(:,:)
-     COMPLEX(DP), allocatable :: S(:,:)
-     TYPE(mydesc)             :: desc
+     type(dmat) :: H
+     type(dmat) :: S
      logical                  :: generalized
      integer                  :: k 
   END TYPE kproblem
@@ -38,13 +37,12 @@ module srb_types
   END TYPE basis
   !
   TYPE pseudop
-    COMPLEX(DP), ALLOCATABLE  :: projs(:,:)
-    TYPE(mydesc), allocatable :: desc(:)
+    type(dmat), allocatable :: projs(:)
     TYPE(c_ptr)               :: projs_d = C_NULL_PTR
     TYPE(c_ptr)               :: Q_d = C_NULL_PTR
     TYPE(c_ptr)               :: D_d = C_NULL_PTR
     TYPE(c_ptr)               :: S_d = C_NULL_PTR
-    INTEGER                   :: projs_unit = -3997
+    INTEGER, allocatable      :: p_unit(:)
     INTEGER                   :: s_unit = -3998
     integer                   :: b_unit = -3999
     integer                   :: b_size(16)
@@ -61,8 +59,7 @@ module srb_types
   END TYPE pseudop
   !
   TYPE nk_list
-    COMPLEX(DP), pointer :: host_ar(:,:,:)
-    TYPE(mydesc)         :: desc
+    type(dmat), pointer :: host_ar(:)
     TYPE(c_ptr)          :: device_ptr = C_NULL_PTR
     INTEGER              :: file_unit = -1
     integer              :: nbnd, nk
@@ -221,14 +218,13 @@ MODULE srb
       type(kproblem), intent(inout) :: Hk
     end subroutine build_s_matrix
 
-    SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_opt, P, Pinv, btype_opt)
+    SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, btype_opt)
       USE kinds, ONLY: DP
       USE srb_types, only : kproblem
-      use srb_matrix, only : mydesc
+      use srb_matrix, only : dmat
       IMPLICIT NONE
       TYPE(kproblem), intent(INOUT) :: Hk
-      COMPLEX(DP), intent(INOUT) :: evecs(:,:)
-      type(mydesc), intent(IN) :: evecs_desc
+      type(dmat), intent(INOUT) :: evecs
       REAL(DP),    intent(OUT)   :: evals(:)
       integer,     intent(in), optional :: num_opt
       integer,     intent(in), optional :: meth_opt
@@ -253,11 +249,12 @@ MODULE srb
     subroutine store_states(wfc, pp, k, states, betawfc)
       use kinds, only : DP
       use srb_types, only : pseudop, nk_list
-      complex(DP), intent(in)    :: wfc(:,:)
-      type(pseudop), intent(in)    :: pp
+      use srb_matrix, only : dmat
+      type(dmat), intent(in)    :: wfc
+      type(pseudop), intent(in) :: pp
       integer, intent(in) :: k
-      type(nk_list), intent(inout)   :: states
-      type(nk_list), intent(inout)   :: betawfc
+      type(nk_list), intent(inout) :: states
+      type(nk_list), intent(inout) :: betawfc
     end subroutine store_states
 
     subroutine build_rho(states, betawfc, wg, wq, opt_basis, nspin, rho, becsum)
@@ -274,27 +271,25 @@ MODULE srb
       real(DP), intent(inout) :: becsum(:,:,:)
     end subroutine build_rho
 
-    subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becsum)
+    subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
       USE kinds, ONLY : DP
       use srb_types, only : nk_list
-      use srb_matrix, only : mydesc
+      use srb_matrix, only : dmat
       type(nk_list), intent(in) :: states
       type(nk_list), intent(in) :: betawfc
       REAL(DP), intent(in) :: wg(:,:)
       REAL(DP), intent(in) :: wq(:)
       integer, intent(in)   :: nspin
-      COMPLEX(DP), intent(inout) :: rho(:,:,:)
-      type(mydesc), intent(in) :: rho_desc
+      type(dmat), intent(inout) :: rho(:)
       real(DP), intent(inout) :: becsum(:,:,:)
     end subroutine build_rho_reduced
 
-    subroutine transform_rho(rho_compact, rho_desc, opt_basis, rho)
+    subroutine transform_rho(rho_compact, opt_basis, rho)
       USE kinds, ONLY : DP
       USE srb_types, ONLY : basis
-      use srb_matrix, only : mydesc
+      use srb_matrix, only : dmat
       USE scf, ONLY : scf_type
-      COMPLEX(DP), intent(inout) :: rho_compact(:,:,:)
-      type(mydesc), intent(in) :: rho_desc
+      type(dmat), intent(inout) :: rho_compact(:)
       type(basis), intent(in) :: opt_basis
       type(scf_type), intent(inout) :: rho
     end subroutine transform_rho

@@ -1,9 +1,9 @@
 #define W_TOL 0.00001
 
-subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becsum)
+subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   use kinds, only : DP
   use srb_types, only : basis, nk_list
-  use srb_matrix, only : mydesc, block_outer
+  use srb_matrix, only : dmat, block_outer, col_scal, copy_dmat, print_dmat
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -30,8 +30,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
   REAL(DP), intent(in) :: wg(:,:)
   REAL(DP), intent(in) :: wq(:)
   integer, intent(in)   :: nspin
-  COMPLEX(DP), intent(inout) :: rho(:,:,:)
-  type(mydesc), intent(in) :: rho_desc
+  type(dmat), intent(inout) :: rho(:)
   real(DP), intent(inout) :: becsum(:,:,:)
 
   ! locals
@@ -41,52 +40,46 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
   real(DP) :: w1
   complex(DP) :: wz
   real(DP), parameter :: k_gamma(3) = 0.d0
-  complex(DP), allocatable :: tmp(:,:)
+  type(dmat) :: tmp
   complex(DP), allocatable :: betapsi(:,:)
   integer, allocatable :: igk(:)
   real(DP), allocatable :: g2kin(:)
   real(DP), allocatable :: root(:)
-  integer :: ioff, a, t, ijh, ih, jh, i, j, k, spin, q
+  integer :: ioff, a, t, ijh, ih, jh, i, j, k, spin, q, ptr
   integer :: max_band
-  complex(DP), pointer :: ptr(:,:) => NULL()
   real(DP) :: trace
-  type(mydesc) :: rdesc, sdesc
   integer, external :: indxl2g
 
-  rdesc = states%desc
-  nbasis = size(states%host_ar, 1)
-  nbnd   = size(states%host_ar, 2)
+  nbasis = size(states%host_ar(1)%dat, 1)
+  nbnd   = size(states%host_ar(1)%dat, 2)
   nk     = states%nk / nspin
 
   allocate(root(nbasis))
-  allocate(tmp(states%desc%nrl, states%desc%ncl))
+  call copy_dmat(tmp, states%host_ar(1))
 
   trace = 0.
   do k = 1+me_pool, nk, nproc_pool
    do spin = 1, nspin
     q = (k+(spin-1)*(nk+nproc_pool)-1)/nproc_pool + 1
     
-    if (size(states%host_ar, 3) == 1) then
-      ptr => states%host_ar(:,:,1)
-      call get_buffer(ptr, nbasis*nbnd, states%file_unit, q)
-    else
-      allocate(ptr(nbasis,nbnd))
-      ptr = states%host_ar(:,:,q)
-    endif
 
   ! Form a charge density
   !
   ! ... here we sum for each k point the contribution
   ! ... of the wavefunctions to the charge
+    if (size(states%host_ar) == 1) then
+      ptr = 1
+      call get_buffer(states%host_ar(1)%dat, nbasis*nbnd, states%file_unit, q)
+    else
+      ptr = q
+    endif
 #if 1
-    do ibnd = 1, nbnd
-      ibnd_g = indxl2g(ibnd, rdesc%desc(6), rdesc%mycol, rdesc%desc(8), rdesc%npcol)
-      tmp(:,ibnd) = (wg(ibnd_g, k+(spin-1)*nk) / omega) * ptr(:,ibnd)
-    enddo 
+    call col_scal(states%host_ar(ptr), tmp, wg(:,k+(spin-1)*nk)/omega)
     call block_outer(nbasis, nbnd, &
-                     one, tmp, nbasis, &
-                          ptr, nbasis, &
-                     one, rho(:,:,spin), rho_desc)
+                     one, tmp%dat, nbasis, &
+                          states%host_ar(ptr)%dat, nbasis, &
+                     one, rho(spin))
+    trace = trace + sum(wg(1:5,k+(spin-1)*nk)/omega)
 
 #else
     max_band = 1
@@ -96,11 +89,11 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
     enddo
 
     root(1:max_band) = sqrt(wg(1:max_band, k+(spin-1)*nk) / omega)
-    forall(j = 1:max_band, i = 1:nbasis) ptr(i,j) = ptr(i,j) * root(j)
+    forall(j = 1:max_band, i = 1:nbasis) tmp%dat(i,j) = states%host_ar(ptr)%dat(i,j) * root(j)
 
     call zherk('U', 'N', nbasis, max_band, one, &
-               ptr(:,:), nbasis, one, &
-               rho(:,:,spin), nbasis)
+               tmp%dat, nbasis, one, &
+               rho(spin)%dat, nbasis)
 
     do ibnd = max_band + 1, nbnd
       if (ibnd > size(wg,1)) exit 
@@ -108,31 +101,34 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
 
       wz = cmplx(wg(ibnd, k+(spin-1)*nk) / omega, kind=DP)
       call ZHERK('U', 'N', nbasis, 1, wz, &
-                 ptr(:, ibnd), nbasis, one, &
-                 rho(:,:,spin), nbasis)
+                 tmp%dat(:, ibnd), nbasis, one, &
+                 rho(spin)%dat, nbasis)
     enddo
 #endif
    enddo
   enddo
-  call mp_sum(rho, intra_pool_comm)
-  if (size(states%host_ar, 3) == 1) deallocate(ptr)
+  write(*,*) "Trace(rho) = ", trace
+  do spin = 1, nspin
+     call mp_sum(rho(spin)%dat, intra_pool_comm)
+  enddo
+
   deallocate(root)
 
   ! ==================================================================
   ! Add the non-local part
   ! ==================================================================
-  if (size(betawfc%host_ar,3) == 0) return 
+  if (size(betawfc%host_ar) == 0) return 
   call start_clock('  addproj')
 
   kpoint: do k = 1+me_pool, nk, nproc_pool
    do  spin = 1,nspin 
     q = (k+(spin-1)*(nk+nproc_pool)-1)/nproc_pool + 1
 
-  if (size(betawfc%host_ar, 3) == 1) then
-    ptr => betawfc%host_ar(:,:,1)
-    call get_buffer(ptr, nkb*nbnd, betawfc%file_unit, q)
+  if (size(betawfc%host_ar) == 1) then
+    ptr = 1 
+    call get_buffer(betawfc%host_ar(1)%dat, nkb*nbnd, betawfc%file_unit, q)
   else
-    ptr => betawfc%host_ar(:,:,q)
+    ptr = q
   endif
 
   band: DO ibnd = 1, nbnd
@@ -147,11 +143,11 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
       proj1: do ih = 1, nh(t)
         ijh = ijh + 1
         becsum(ijh, a, spin) = becsum(ijh, a, spin) + &
-          w1 * DBLE(ptr(ioff + ih, ibnd) * CONJG(ptr(ioff + ih, ibnd)))
+          w1 * DBLE(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd) * CONJG(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd)))
         proj2: do jh = (ih + 1), nh(t)
           ijh = ijh + 1
           becsum(ijh, a, spin) = becsum(ijh, a, spin) + &
-            2.d0 * w1 * DBLE(ptr(ioff + jh, ibnd) * CONJG(ptr(ioff + ih, ibnd)))
+            2.d0 * w1 * DBLE(betawfc%host_ar(ptr)%dat(ioff + jh, ibnd) * CONJG(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd)))
         enddo proj2
       enddo proj1
       ioff = ioff + nh(t)
@@ -164,7 +160,6 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, rho_desc, becs
 
   call stop_clock('  addproj')
 
-  nullify(ptr)
 
   return
 

@@ -5,11 +5,11 @@
 #define DLEN 9
 #define ETHR_FAC 1.D-2
 
-recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_opt, P, Pinv, btype_opt)
+recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, btype_opt)
   ! Diagonalizes a Hermitian matrix, providing eigenvalues and eigenvectors
   USE kinds, ONLY: DP
   use srb_types, only : kproblem
-  use srb_matrix, only : mydesc
+  use srb_matrix, only : dmat
   USE constants,        ONLY : pi
 
   USE scalapack_mod, only : scalapack_diag, nprow, npcol, ctx_sq, desc_sq
@@ -21,8 +21,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
 
   ! arguments
   type(kproblem), intent(INOUT) :: Hk
-  COMPLEX(DP), intent(INOUT) :: evecs(:,:)
-  type(mydesc), intent(in) :: evecs_desc
+  type(dmat), intent(INOUT) :: evecs
   REAL(DP),    intent(inOUT)   :: evals(:)
   integer,     intent(in), optional :: num_opt !>!< number of eigenvectors to compute
   integer,     intent(in), optional :: meth_opt
@@ -53,11 +52,11 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
   real(dp),external :: DLAMCH, dznrm2
   complex(DP), external :: ZDOTC
 
-  n = size(Hk%H, 1)
+  n = Hk%H%desc(3)
   if (present(num_opt)) then
     num = num_opt
   else
-    num = size(Hk%H, 1)
+    num = n
   end if
   if (.not. present(meth_opt) .or. ethr < 1.D-11) then
     meth = 0
@@ -78,16 +77,16 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
   if (Hk%generalized) then
     if (num > 0) then
       allocate(ifail(n))
-      allocate(iclustr(2*Hk%desc%nprow*Hk%desc%npcol), gap(Hk%desc%nprow*Hk%desc%npcol))
+      allocate(iclustr(2*Hk%H%nprow*Hk%H%npcol), gap(Hk%H%nprow*Hk%H%npcol))
       allocate(work(1), rwork(1), iwork(1))
-      allocate(z(Hk%desc%nrl, Hk%desc%ncl))
+      allocate(z(size(Hk%H%dat,1),size(Hk%H%dat,2)))
       call pzhegvx(1, 'V', 'I', 'U', n, &
-                   Hk%H, 1, 1, Hk%desc%desc, &
-                   Hk%S, 1, 1, Hk%desc%desc, &
+                   Hk%H%dat, 1, 1, Hk%H%desc, &
+                   Hk%S%dat, 1, 1, Hk%S%desc, &
                    0, 0, 1, num, &
                    abstol, ne_out, nv_out, evals, &
                    -1.d0, &
-                   z, 1, 1, Hk%desc%desc, &
+                   z, 1, 1, Hk%H%desc, &
                    work, -1, rwork, -1, iwork, -1, &
                    ifail, iclustr, gap, ierr)
       lwork = work(1); deallocate(work); allocate(work(lwork))
@@ -97,16 +96,16 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
       abstol = ethr
 
       call pzhegvx(1, 'V', 'I', 'U', n, &
-                   Hk%H, 1, 1, Hk%desc%desc, &
-                   Hk%S, 1, 1, Hk%desc%desc, &
+                   Hk%H%dat, 1, 1, Hk%H%desc, &
+                   Hk%S%dat, 1, 1, Hk%S%desc, &
                    0, 0, 1, num, &
                    abstol, ne_out, nv_out, evals, &
                    -1.d0, &
-                   z, 1, 1, Hk%desc%desc, &
+                   z, 1, 1, Hk%H%desc, &
                    work, lwork, rwork, lrwork, iwork, liwork, &
                    ifail, iclustr, gap, ierr)
       if (ierr /= 0) write(*,*) "zhegvx error: ", ierr
-      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs, 1, 1, evecs_desc%desc, Hk%desc%desc)
+      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
       deallocate(z)
       deallocate(work, rwork, iwork)
       deallocate(ifail, iclustr, gap)
@@ -118,42 +117,42 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
                  Hk%S, n, &
                  evals, work, lwork, rwork, ierr)
       if (ierr /= 0) write(*,*) "zhegv error: ", ierr
-      evecs = Hk%H(:,1:num)
+      evecs%dat = Hk%H%dat(:,1:num)
       deallocate(work)
     endif
   else
     if (num == 0) then
       lwork = 2*n
       allocate(work(lwork), rwork(3*n))
-      CALL ZHEEV('N', 'U', n, Hk%H, n, evals, work, lwork, rwork, ierr) 
-      evecs = Hk%H(:,1:num)
+      CALL ZHEEV('N', 'U', n, Hk%H%dat, n, evals, work, lwork, rwork, ierr) 
+      evecs%dat = Hk%H%dat(:,1:num)
       deallocate(work, rwork)
     else
       allocate(ifail(n))
-      allocate(z(Hk%desc%nrl, Hk%desc%ncl))
-      allocate(iclustr(2*Hk%desc%nprow*Hk%desc%npcol), gap(Hk%desc%nprow*Hk%desc%npcol))
+      allocate(z(size(Hk%H%dat,1),size(Hk%H%dat,2)))
+      allocate(iclustr(2*Hk%H%nprow*Hk%H%npcol), gap(Hk%H%nprow*Hk%H%npcol))
       allocate(work(1), rwork(1), iwork(1))
       abstol = ethr
       CALL pzheevx('V', 'I', 'U', n, &
-                  Hk%H, 1, 1, Hk%desc%desc, &
+                  Hk%H%dat, 1, 1, Hk%H%desc, &
                   0, 0, 1, num, &
                   abstol, ne_out, nv_out, evals, &
                   -1.d0, &
-                  z, 1, 1, Hk%desc%desc, &
+                  z, 1, 1, Hk%H%desc, &
                   work, -1, rwork, -1, iwork, -1, &
                   ifail, iclustr, gap, ierr) 
       lwork = work(1); deallocate(work); allocate(work(lwork))
       lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
       liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
       CALL pzheevx('V', 'I', 'U', n, &
-                  Hk%H, 1, 1, Hk%desc%desc, &
+                  Hk%H%dat, 1, 1, Hk%H%desc, &
                   0, 0, 1, num, &
                   abstol, ne_out, nv_out, evals, &
                   -1.d0, &
-                  z, 1, 1, Hk%desc%desc, &
+                  z, 1, 1, Hk%H%desc, &
                   work, lwork, rwork, lrwork, iwork, liwork, &
                   ifail, iclustr, gap, ierr) 
-      call pzgemr2d(n, num, z, 1, 1, Hk%desc%desc, evecs, 1, 1, evecs_desc%desc, Hk%desc%desc)
+      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
       deallocate(z)
       deallocate(ifail, iclustr, gap)
       deallocate(work, rwork, iwork)
@@ -178,7 +177,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
   !
   hpsi = ZERO
   psi  = ZERO
-  psi(:,1:num) = evecs(:,1:num)
+  psi(:,1:num) = evecs%dat(:,1:num)
   !
   ! ... hpsi contains h times the basis vectors
   !
@@ -462,7 +461,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, evecs_desc, num_opt, meth_op
         CALL ZGEMM( 'N', 'N', n, num, nbase, &
                     one, psi, n, &
                          vc, num2, &
-                    zero, evecs, n )
+                    zero, evecs%dat, n )
         !
         IF ( notconv == 0 ) THEN
            !

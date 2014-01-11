@@ -197,11 +197,9 @@ srb-h_matrix.o \
 srb-diag.o \
 srb-init_us_2.o \
 srb-store_states.o \
-srb-rho.o \
 srb-rho_reduced.o \
 srb-transform_rho.o \
 srb-s_matrix.o \
-srb-projs.o \
 srb-projs_reduced.o \
 srb-build_basis.o \
 srb-stress_us.o \

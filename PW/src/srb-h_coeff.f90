@@ -10,7 +10,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   USE mp, ONLY: mp_sum, mp_barrier
 
   USE srb_types, ONLY : basis, ham_expansion
-  USE srb_matrix, only : block_inner2, dmat, copy_dmat
+  USE srb_matrix, only : block_inner, dmat, copy_dmat
   USE srb, ONLY : decomp_size
 
   USE cell_base, ONLY : tpiba2, tpiba
@@ -84,7 +84,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     allocate(buffer(npw, nbnd))
 
     forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g2kin(i)
-    call block_inner2(nbnd, npw, &
+    call block_inner(nbnd, npw, &
                      one,  opt_basis%elements, npw, &
                            buffer,             npw, &
                      zero, ham%con(1))
@@ -103,7 +103,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     do ixyz = 1, 3
 !      gtmp = cmplx(0.d0, kind=DP)
       forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g(ixyz, igk(i))*tpiba
-      call block_inner2(nbnd, npw, &
+      call block_inner(nbnd, npw, &
                        one,  opt_basis%elements, npw, &
                              buffer,             npw, &
                        zero, tmp_mat)
@@ -143,7 +143,7 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     forall (i = 1:nbl) gtmp(1:npw, i+j-1) = buffer(nls(igk(1:npw)), i)
   enddo
   !
-  call block_inner2(nbnd, npw, &
+  call block_inner(nbnd, npw, &
                    one, opt_basis%elements, npw, &
                         gtmp,               npw, &
                    one, ham%con(s))

@@ -29,16 +29,16 @@ subroutine stres_knl (sigmanlc, sigmakin)
   USE mp_pools,             ONLY: inter_pool_comm
   USE mp_bands,             ONLY: intra_bgrp_comm
   USE mp_global,            ONLY: intra_pool_comm
-  use mp_global,            only: nproc_pool, me_pool
+  use mp_global,            only: npot, my_pot_id
   USE mp,                   ONLY: mp_sum
   use input_parameters, only : use_srb
   use srb, only : qpoints, states, bstates, wgq, scb
+  use srb_matrix, only : dmat, copy_dmat
 
   implicit none
   real(DP) :: sigmanlc (3, 3), sigmakin (3, 3)
   real(DP), allocatable :: gk (:,:), kfac (:)
   real(DP) :: twobysqrtpi, gk2, arg
-  complex(DP), pointer :: ptr(:,:)
   real(DP), parameter :: k_gamma(3) = 0.d0
   integer, allocatable :: igk2(:)
   real(DP), allocatable :: g2kin(:)
@@ -46,6 +46,7 @@ subroutine stres_knl (sigmanlc, sigmakin)
   integer :: nbasis
   integer :: ik, l, m, i, ibnd, is, s, q
   complex(DP), parameter :: zero = (0.d0, 0.d0), one = (1.d0, 0.d0)
+  type(dmat) :: tmp_mat
 
 
   allocate (gk(  3, npwx))    
@@ -81,32 +82,30 @@ subroutine stres_knl (sigmanlc, sigmakin)
            kfac (i) = 1.d0 + qcutz / q2sigma * twobysqrtpi * exp ( - arg)
         endif
      enddo
+    call copy_dmat(tmp_mat, states%host_ar(1))
     do s = 1, nspin
      ! pull the wavefunctions
-     q = (ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1
-     if (size(states%host_ar, 3) == 1) then
-       ptr => states%host_ar(:,:,1)
-       if (MOD(ik-1, nproc_pool) == me_pool) then
-         call get_buffer(ptr, scb%length*nbnd, states%file_unit,q)
+     q = (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1
+     if (size(states%host_ar) == 1) then
+       if (MOD(ik-1, npot) == my_pot_id) then
+         call get_buffer(tmp_mat%dat, size(tmp_mat%dat), states%file_unit,q)
        else
-         ptr = cmplx(0.d0, kind=DP)
+         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      else
-       allocate(ptr(scb%length, nbnd))
-       if (MOD(ik-1, nproc_pool) == me_pool) then
-         ptr = states%host_ar(:,:,q)
+       if (MOD(ik-1, npot) == my_pot_id) then
+         tmp_mat%dat = states%host_ar(q)%dat
        else
-         ptr = cmplx(0.d0, kind=DP)
+         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      endif
-     call mp_sum(ptr, intra_pool_comm)
+     call mp_sum(tmp_mat%dat, intra_pool_comm)
 
      ! transform them into the PW basis
      call ZGEMM('N', 'N', npw, nbnd, nbasis, one, &
                 scb%elements, npw, &
-                ptr(:,:), nbasis, zero, &
+                tmp_mat%dat, nbasis, zero, &
                 evc, npwx)
-     if (size(states%host_ar, 3) /= 1) deallocate(ptr)
      !
      !   kinetic contribution
      !
@@ -139,27 +138,25 @@ subroutine stres_knl (sigmanlc, sigmakin)
      !
      CALL allocate_bec_type ( nkb, nbnd, becp, intra_bgrp_comm )
      if (okvan) then
-     if (size(bstates%host_ar, 3) == 1) then
-       ptr => bstates%host_ar(:,:,1)
-       if (MOD(ik-1, nproc_pool) == me_pool) then
-         call get_buffer(ptr, nkb*nbnd, bstates%file_unit, q)
+     call copy_dmat(tmp_mat, bstates%host_ar(1))
+     if (size(bstates%host_ar) == 1) then
+       if (MOD(ik-1, npot) == my_pot_id) then
+         call get_buffer(tmp_mat%dat, nkb*nbnd, bstates%file_unit, q)
        else
-         ptr = cmplx(0.d0, kind=DP)
+         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      else
-       allocate(ptr(nkb, nbnd))
-       if (MOD(ik-1, nproc_pool) == me_pool) then
-         ptr = bstates%host_ar(:,:,q) ! memory leak
+       if (MOD(ik-1, npot) == my_pot_id) then
+         tmp_mat%dat = bstates%host_ar(q)%dat ! memory leak
        else
-         ptr = cmplx(0.d0, kind=DP)
+         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      endif
-     call mp_sum(ptr, intra_pool_comm)
-     becp%k = ptr
+     call mp_sum(tmp_mat%dat, intra_pool_comm)
+     becp%k = tmp_mat%dat
      endif 
      call stress_us_srb (ik+(s-1)*qpoints%nred, gk, sigmanlc)
      CALL deallocate_bec_type ( becp )
-     if (size(bstates%host_ar, 3) > 1) deallocate(ptr)
     enddo !spin
   enddo
   !========

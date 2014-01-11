@@ -7,7 +7,7 @@ subroutine store_states(wfc, pp, k, states, betawfc)
   use kinds, only : DP
   use uspp_param, only : nh
   use srb_types, only : pseudop, nk_list
-  use srb_matrix, only : print_desc
+  use srb_matrix, only : print_dmat, dmat
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm
@@ -15,7 +15,7 @@ subroutine store_states(wfc, pp, k, states, betawfc)
 
   IMPLICIT NONE
 
-  complex(DP), intent(in)    :: wfc(:,:)
+  type(dmat), intent(in)    :: wfc
   type(pseudop), intent(in)    :: pp
   integer, intent(in)        :: k
   type(nk_list), intent(inout)   :: states
@@ -28,22 +28,15 @@ subroutine store_states(wfc, pp, k, states, betawfc)
   complex(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
   COMPLEX(DP), pointer :: tmp(:,:) => NULL(), tmp2(:,:) => NULL()
   logical stat
+  integer :: ptr
 
   integer,save :: old_states_length
 
-  nbasis = size(states%host_ar,  1)
-  nbnd   = states%desc%ncl
+  nbasis = size(states%host_ar(1)%dat,  1)
+  nbnd   = size(states%host_ar(1)%dat,  2)
 
   ! check to see if we're caching to file
-  if (size(states%host_ar, 3) == 1) then
-    tmp => states%host_ar(:,:,1)
-  else
-    tmp => states%host_ar(:,:,k)
-  endif 
-
-  tmp = wfc(:,1:nbnd)
-
-  if (size(states%host_ar, 3) == 1) then
+  if (size(states%host_ar) == 1) then
     if (states%file_unit < 0) then
       states%file_unit = 4826
       call open_buffer(states%file_unit, 'states', nbasis*nbnd, 1, stat)
@@ -54,7 +47,9 @@ subroutine store_states(wfc, pp, k, states, betawfc)
       call open_buffer(states%file_unit, 'states', nbasis*nbnd, 1, stat)
       old_states_length = nbasis*nbnd
     endif
-    call save_buffer(tmp, nbasis*nbnd, states%file_unit, k)
+    call save_buffer(wfc%dat, nbasis*nbnd, states%file_unit, k)
+  else
+    states%host_ar(k)%dat = wfc%dat   
   endif
 
 !  if (abs(sum(dble(conjg(tmp(:,1)) * tmp(:,1))) - 1) > 1.d-6) &
@@ -63,32 +58,33 @@ subroutine store_states(wfc, pp, k, states, betawfc)
   if (pp%us) then
 
   ! check to see if we're caching to file
-  if (size(betawfc%host_ar, 3) == 1) then
-    tmp2 => betawfc%host_ar(:,:,1)
+  if (size(betawfc%host_ar) == 1) then
+    ptr = 1
   else
-    tmp2 => betawfc%host_ar(:,:,k)
+    ptr = k
   endif
 
   ! produce <\beta|\psi>
   do t = 1, size(pp%na)
-    call pZGEMM('C', 'N', pp%na(t)*nh(t), states%desc%desc(4), nbasis, &
-               one,  pp%projs(1,pp%nt_off(t)), 1, 1, pp%desc(t)%desc, &
-                     tmp, 1, 1, states%desc%desc, &
-               zero, tmp2, pp%nt_off(t), 1, betawfc%desc%desc)
+    call print_dmat(pp%projs(t))
+    call print_dmat(states%host_ar(1))
+    call print_dmat(betawfc%host_ar(1))
+    call pZGEMM('C', 'N', pp%na(t)*nh(t), states%host_ar(1)%desc(4), nbasis, &
+               one,  pp%projs(t)%dat, 1, 1, pp%projs(t)%desc, &
+                     wfc%dat, 1, 1, states%host_ar(1)%desc, &
+               zero, betawfc%host_ar(ptr)%dat, pp%na_off(pp%nt_off(t)), 1, betawfc%host_ar(1)%desc)
   enddo
 
-  if (size(betawfc%host_ar, 3) == 1) then
+  if (size(betawfc%host_ar) == 1) then
     if (betawfc%file_unit < 0) then
       betawfc%file_unit = 4827
-      call open_buffer(betawfc%file_unit, 'bstates', pp%nkb_l*nbnd, 1, stat)
+      call open_buffer(betawfc%file_unit, 'bstates', size(betawfc%host_ar(1)%dat), 1, stat)
     endif  
-    call save_buffer(tmp2, pp%nkb_l*nbnd, betawfc%file_unit, k)
+    call save_buffer(betawfc%host_ar(1)%dat, size(betawfc%host_ar(1)%dat), betawfc%file_unit, k)
   endif
 
   endif
 
-  nullify(tmp)
-  nullify(tmp2)
 
   return
 

@@ -4,7 +4,7 @@
 SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   USE kinds,   ONLY : DP
   USE srb_types, ONLY : basis, ham_expansion, pseudop, kproblem
-  use srb_matrix, only : add_diag, block_outer
+  use srb_matrix, only : add_diag, block_outer, print_dmat
   use mp_global, only : nproc_pot
   use constants, only : rytoev
   use uspp, only : deeq, nkb
@@ -29,9 +29,10 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   COMPLEX(DP) :: zqvec(3), zqvec2
   COMPLEX(DP), allocatable :: V_half(:,:)
   real(DP), allocatable :: rwork(:)
-  integer :: i, j, i_l, j_l, a, t, ioff
+  integer :: i, j, i_l, j_l, a, t, ioff, prow, pcol
   integer :: nbasis
   logical :: islocal, info
+  complex(DP) :: trace 
 
 
   ! ============================================================
@@ -46,44 +47,50 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
   zqvec2 = cmplx(dot_product(tqvec, tqvec), kind = DP ) !likewise with the square
   nbasis = ham%con(1)%desc(3)
 
-  Hk%H = ham%con(spin)%dat
+  Hk%H%dat = ham%con(spin)%dat
   call zgemv('T', 3, size(ham%con(1)%dat), &
              cmplx(2.d0, kind=DP),  ham%lin, 3, &
                    zqvec,   1, &
-             one, Hk%H, 1)
-  call add_diag(nbasis, zqvec2, Hk%H, Hk%desc)
+             one, Hk%H%dat, 1)
+  call add_diag(Hk%H, zqvec2)
 
   ! ===========================================================================
   ! Add non-local component  V^{NL} = \sum <\beta|D|\beta>
   ! ===========================================================================
-  if (size(pp%projs) == 1) then
+  if (.not. allocated(pp%projs)) then
     return
   endif
 
   if (pp%us) then
-    allocate(V_half(nbasis, nkb))
+  
+  do t = 1, pp%ntyp
+    allocate(V_half(nbasis, size(pp%projs(t)%dat,2)))
     allocate(rwork(2*nhm*nbasis))
     ioff = 1 !index offset
-    do t = 1, nsp
-     do a = 1, nat, nproc_pot
-       if (ityp(a) /= t) cycle
-       ! Do the left side of the transformation
-       call zlacrm(nbasis, nh(t), &
-                   pp%projs(:,ioff:ioff+nh(t)), nbasis, &
-                   deeq(:,:,a,spin), nhm, &
-                   V_half(:, ioff:ioff+nh(t)), nbasis, &
-                   rwork)
-       ioff = ioff + nh(t)
-     enddo
+    do a = 1, pp%na(t)
+      call infog2l(1+(a-1)*nh(t), 1, &
+                   pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
+                                     pp%projs(t)%myrow, pp%projs(t)%mycol, &
+                   i_l, j_l, prow, pcol)
+      if (prow == pp%projs(t)%myrow .and. pcol == pp%projs(t)%mycol) then
+        ! Do the left side of the transformation
+        call zlacrm(nbasis, nh(t), &
+                    pp%projs(t)%dat(:,ioff:ioff+nh(t)), nbasis, &
+                    deeq(:,:,a+pp%nt_off(t)-1,spin), nhm, &
+                    V_half(:, ioff:ioff+nh(t)), nbasis, &
+                    rwork)
+        ioff = ioff + nh(t)
+      endif
     enddo
 
     ! Do the right side of the transformation, summing into S_matrix
-    call block_outer(nbasis, pp%nkb_l, &
+    call block_outer(nbasis, size(pp%projs(t)%dat,2), &
                      one,  V_half, nbasis, &
-                           pp%projs, nbasis, &
-                     one, Hk%H, Hk%desc)
-  deallocate(V_half)
-  deallocate(rwork)
+                           pp%projs(t)%dat, nbasis, &
+                     one, Hk%H)
+    deallocate(V_half)
+    deallocate(rwork)
+  enddo
 
   else
 
@@ -93,14 +100,13 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
     if (ityp(a) /= t) cycle
     do i = 1, nh(t)
       call zherk('U', 'N', nbasis, 1, cmplx(1./deeq(i,i,a,spin)), &
-                 pp%projs(:,ioff+i-1), nbasis, one, &
-                 Hk%H, nbasis)
+                 pp%projs(t)%dat(:,ioff+i-1), nbasis, one, &
+                 Hk%H%dat, nbasis)
     enddo
     ioff = ioff + nh(t)
    enddo
   enddo
   endif
-
 
 END SUBROUTINE build_h_matrix
 

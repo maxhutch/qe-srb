@@ -1,10 +1,10 @@
 #define W_TOL 0.00001
 #define BLOCK_SIZE 1024
 
-subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
+subroutine transform_rho(rho_srb, opt_basis, rho)
   use kinds, only : DP
   use srb_types, only : basis
-  use srb_matrix, only : mydesc
+  use srb_matrix, only : dmat, copy_dmat, diag
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -26,8 +26,7 @@ subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
 
   IMPLICIT NONE
 
-  COMPLEX(DP), intent(in) :: rho_srb(:,:,:)
-  type(mydesc), intent(in) :: rho_desc
+  type(dmat), intent(in) :: rho_srb(:)
   type(basis), intent(inout) :: opt_basis
   type(scf_type), intent(inout) :: rho
 
@@ -43,40 +42,39 @@ subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
   real(DP), allocatable :: g2kin(:)
 
   real(DP), allocatable :: S(:)
+  type(dmat) :: sv
   complex(DP), allocatable :: work(:)
   real(DP), allocatable :: rwork(:)
   integer, allocatable :: iwork(:)
-  integer :: lwork, lrwork, liwork, res
+  integer :: lwork, lrwork, liwork
   real(DP) :: trace, trace2
   integer, save :: funit = -128
   logical :: info
 
   npw   = size(opt_basis%elements, 1)
   nbasis = opt_basis%length
-  nspin = size(rho_srb, 3)
+  nspin = size(rho_srb)
 
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma, ngm, g, ecutwfc_int/tpiba2, npw, igk, g2kin)
 
   allocate(S(nbasis))
-  allocate(work(1), rwork(1), iwork(1))
-  call zheevd('V', 'U', nbasis, 0, nbasis, S, work, -1, rwork, -1, iwork, -1, res)
-  lwork = work(1); lrwork = rwork(1); liwork = iwork(1)
-  deallocate(work, rwork, iwork)
-  allocate(work(lwork), rwork(lrwork), iwork(liwork))
+  call copy_dmat(sv, rho_srb(1))
 
   do spin = 1, nspin
 
   ! find the rank-1 decomposition
-
+  trace = 0.d0
+  do i = 1, nbasis
+  trace = trace + abs(rho_srb(spin)%dat(i,i))
+  enddo
+  write(*,*) "Trace(rho) = ", trace
   call start_clock('  svd')
-  call zheevd('V', 'U', nbasis, &
-              rho_srb(:,:,spin), nbasis, &
-              S, work, lwork, rwork, lrwork, iwork, liwork, res) 
+  call diag(rho_srb(spin), S, sv)
   call stop_clock('  svd')
   S = abs(S)
   trace = sum(S)
-  if (res /= 0) write(*,*) "ERROR: res = ", res
+  write(*,*) "Trace(rho) = ", trace
   max_band = 1
   do ibnd = 1, nbasis
       if (S(nbasis+1-ibnd)*(nbasis+1.-ibnd)/trace < W_TOL) exit
@@ -89,7 +87,7 @@ subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
   call start_clock('  gemm')
   call ZGEMM('N', 'N', npw, max_band, nbasis, one, &
               opt_basis%elements, npw, &
-              rho_srb(:,nbasis+1-max_band,spin), nbasis, zero, &
+              sv%dat(:,nbasis+1-max_band), nbasis, zero, &
               tmp, npw)
   call stop_clock('  gemm')
 
@@ -118,7 +116,6 @@ subroutine transform_rho(rho_srb, rho_desc, opt_basis, rho)
   deallocate(tmp)
   enddo 
   deallocate(S, igk, g2kin)
-  deallocate(work, rwork, iwork)
 
   return
 

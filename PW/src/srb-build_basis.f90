@@ -12,7 +12,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE srb_types, ONLY : basis, kmap
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
-  use srb_matrix, only : dmat, setup_dmat, block_inner2, diag, pool_scope, serial_scope, print_dmat
+  use srb_matrix, only : dmat, setup_dmat, block_inner, diag, pool_scope, serial_scope, print_dmat
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -313,9 +313,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   ! constuct the overlap matrix
   nbasis = nbnd * nks ! global array size
   call setup_dmat(S, nbasis, nbasis, scope_in = pool_scope)
-  call print_dmat(S)
   call setup_dmat(B, nbasis, nbasis, scope_in = pool_scope)
-  call print_dmat(B)
 !  call setup_desc(S_desc, nbasis, nbasis)
 !  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! setup desc in scalapack_mod
 !  allocate(S_l(S_desc%nrl, S_desc%ncl), B_l(S_desc%nrl, S_desc%ncl), eigU(nbasis))
@@ -323,7 +321,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
 !  S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
   eigU = 0.d0 
 
-  call block_inner2(nbnd*nks, ngk_gamma, &
+  call block_inner(nbnd*nks, ngk_gamma, &
                    one,  evc_all, npwx_tmp, &
                          evc_all, npwx_tmp, &
                    zero, S)
@@ -372,7 +370,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
 
 #if 1
   call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
-  call print_dmat(Z)
 
   call pzgemr2d(nbasis, nbasis_trunc, &
                 B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
