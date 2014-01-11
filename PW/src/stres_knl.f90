@@ -69,8 +69,8 @@ subroutine stres_knl (sigmanlc, sigmakin)
     deallocate(gk, kfac)
     allocate(gk(3,npw), kfac(npw))
     kfac(:) = 1.d0
-    write(*,*) sum(wgq(1:nbnd,1:qpoints%nred)) 
-    write(*,*)  scb%length*nbnd, nbnd*nbasis
+    write(*,*) "npw: ", npw, size(states%host_ar(1)%dat,1)
+    write(*,*) "nbnd: ", nbnd, size(states%host_ar(1)%dat,2)
   do ik = 1, qpoints%nred
      ! setup some q-point related stuff
      xk_tmp = matmul( bg, qpoints%xr(:,ik) - floor(qpoints%xr(:,ik)) )
@@ -82,21 +82,17 @@ subroutine stres_knl (sigmanlc, sigmakin)
            kfac (i) = 1.d0 + qcutz / q2sigma * twobysqrtpi * exp ( - arg)
         endif
      enddo
-    call copy_dmat(tmp_mat, states%host_ar(1))
     do s = 1, nspin
+     call copy_dmat(tmp_mat, states%host_ar(1))
      ! pull the wavefunctions
      q = (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1
      if (size(states%host_ar) == 1) then
        if (MOD(ik-1, npot) == my_pot_id) then
          call get_buffer(tmp_mat%dat, size(tmp_mat%dat), states%file_unit,q)
-       else
-         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      else
        if (MOD(ik-1, npot) == my_pot_id) then
          tmp_mat%dat = states%host_ar(q)%dat
-       else
-         tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      endif
      call mp_sum(tmp_mat%dat, intra_pool_comm)
