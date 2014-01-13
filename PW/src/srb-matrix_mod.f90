@@ -150,9 +150,13 @@ module srb_matrix
     endif
 
     ! pick reasonable default blocks
+    if (.not. (present(mb_in) .or. present(nb_in))) then
+      mb = min(m/nprow(A%scope) + 1,n/npcol(A%scope)+1)
+      nb = mb
+    endif
     if (present(mb_in)) then
       mb = mb_in
-    else
+    else if (present(nb_in)) then
       if (nprow(A%scope) == 1) then
         mb = m
       else
@@ -161,7 +165,7 @@ module srb_matrix
     endif
     if (present(nb_in)) then
       nb = nb_in
-    else
+    else if (present(mb_in)) then 
       if (npcol(A%scope) == 1) then
         nb = n
       else
