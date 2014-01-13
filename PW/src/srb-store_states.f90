@@ -10,7 +10,6 @@ subroutine store_states(wfc, pp, k, states, betawfc)
   use srb_matrix, only : print_dmat, dmat
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
-  use mp_global, only : intra_pool_comm
   use buffers, only : open_buffer, save_buffer, close_buffer
 
   IMPLICIT NONE
@@ -66,9 +65,6 @@ subroutine store_states(wfc, pp, k, states, betawfc)
 
   ! produce <\beta|\psi>
   do t = 1, size(pp%na)
-    call print_dmat(pp%projs(t))
-    call print_dmat(states%host_ar(1))
-    call print_dmat(betawfc%host_ar(1))
     call pZGEMM('C', 'N', pp%na(t)*nh(t), states%host_ar(1)%desc(4), nbasis, &
                one,  pp%projs(t)%dat, 1, 1, pp%projs(t)%desc, &
                      wfc%dat, 1, 1, states%host_ar(1)%desc, &

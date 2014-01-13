@@ -99,10 +99,6 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     pp%ntyp = ntyp
     pp%nat  = nat
     pp%nkb  = nkb
-    pp%nkb_max = pp%nkb_l
-    call mp_max(pp%nkb_max, intra_pool_comm) 
-    write(*,*) "na_off: ", pp%na_off
-    write(*,*) "nt_off: ", pp%nt_off
   else
     ! resize nbasis
     do t = 1, ntyp    

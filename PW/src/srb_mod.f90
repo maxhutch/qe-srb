@@ -50,7 +50,6 @@ module srb_types
     integer                   :: nat
     INTEGER                   :: nkb
     INTEGER                   :: nkb_l
-    INTEGER                   :: nkb_max
     integer, allocatable      :: na(:)
     integer, allocatable      :: na_off(:)
     integer, allocatable      :: nt_off(:)
@@ -311,7 +310,7 @@ CONTAINS
   !-----------------------------------------------------------------------
     !_
     USE mp_global, ONLY: nproc_pool, intra_pool_comm, intra_bgrp_comm
-    USE mp_global, ONLY: mp_start_pots, me_pot, nproc_pot
+    USE mp_global, ONLY: mp_start_pots, me_pot, nproc_pot, my_pool_id, my_pot_id
     use srb_matrix, only : srb_matrix_init
     USE mp, ONLY: mp_size, mp_rank, mp_get_comm_null
     use control_flags, only : tr2
@@ -367,9 +366,9 @@ CONTAINS
     !call init_splines()
 
     call mp_start_pots(nproc_pool, intra_pool_comm)
-    call scalapack_init(me_pot, nproc_pot)
+    !call scalapack_init(me_pot, nproc_pot)
     call srb_matrix_init()
-
+    write(*,*) "I am", my_pool_id, my_pot_id, me_pot
   END SUBROUTINE init_srb
 
 END MODULE srb

@@ -4,7 +4,7 @@
 subroutine transform_rho(rho_srb, opt_basis, rho)
   use kinds, only : DP
   use srb_types, only : basis
-  use srb_matrix, only : dmat, copy_dmat, diag
+  use srb_matrix, only : dmat, copy_dmat, diag, setup_dmat, pool_scope, serial_scope
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -21,12 +21,12 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   use symme, only : sym_rho 
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
-  use mp_global, only : intra_pool_comm, me_image
+  use mp_global, only : me_image, inter_pot_comm, my_pot_id
   USE wvfct, only: ecutwfc_int => ecutwfc
 
   IMPLICIT NONE
 
-  type(dmat), intent(in) :: rho_srb(:)
+  type(dmat), intent(inout) :: rho_srb(:)
   type(basis), intent(inout) :: opt_basis
   type(scf_type), intent(inout) :: rho
 
@@ -42,7 +42,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   real(DP), allocatable :: g2kin(:)
 
   real(DP), allocatable :: S(:)
-  type(dmat) :: sv
+  type(dmat) :: sv, rho_big
   complex(DP), allocatable :: work(:)
   real(DP), allocatable :: rwork(:)
   integer, allocatable :: iwork(:)
@@ -59,7 +59,9 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   call gk_sort(k_gamma, ngm, g, ecutwfc_int/tpiba2, npw, igk, g2kin)
 
   allocate(S(nbasis))
-  call copy_dmat(sv, rho_srb(1))
+  call setup_dmat(rho_big, nbasis, nbasis, scope_in = pool_scope)
+  call setup_dmat(sv, nbasis, nbasis, scope_in = serial_scope)
+
 
   do spin = 1, nspin
 
@@ -68,13 +70,17 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   do i = 1, nbasis
   trace = trace + abs(rho_srb(spin)%dat(i,i))
   enddo
-  write(*,*) "Trace(rho) = ", trace
+  call mp_sum(rho_srb(spin)%dat, inter_pot_comm)
+  if (my_pot_id .ne. 0) rho_srb(spin)%desc(2) = -1
+  call pzgemr2d(nbasis, nbasis, &
+                rho_srb(spin)%dat, 1, 1, rho_srb(spin)%desc,  &
+                rho_big%dat, 1, 1, rho_big%desc, &
+                rho_big%desc(2))
   call start_clock('  svd')
-  call diag(rho_srb(spin), S, sv)
+  call diag(rho_big, S, sv)
   call stop_clock('  svd')
   S = abs(S)
   trace = sum(S)
-  write(*,*) "Trace(rho) = ", trace
   max_band = 1
   do ibnd = 1, nbasis
       if (S(nbasis+1-ibnd)*(nbasis+1.-ibnd)/trace < W_TOL) exit

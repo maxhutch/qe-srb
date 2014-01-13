@@ -42,7 +42,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   USE symme,                ONLY : sym_rho
   use mp, only : mp_sum
   use mp_global, only : intra_pool_comm, me_pool, nproc_pool, me_image
-  use mp_global, only : me_pot, nproc_pot, npot
+  use mp_global, only : me_pot, nproc_pot, npot, my_pot_id, inter_pot_comm
   use scalapack_mod, only : scalapack_distrib, scalapack_blocksize
   use buffers, only : get_buffer
 
@@ -136,9 +136,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     call stop_clock( ' build_red_basis' )
     if (.not. allocated(h_coeff%con)) allocate(h_coeff%con(nspin))
     do s = 1,nspin
-      call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length)
+      call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length, scope_in = pot_scope)
     enddo
-    call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length)
+    call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length, scope_in = pot_scope)
   else
     if (me_image == 0) write(*,*) "Using a basis of length ", red_basis%length, " and age ", basis_age
   endif
@@ -162,7 +162,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   energies = 0.d0
 
   states%nk = qpoints%nred * nspin
-  call setup_dmat(Hk%H, red_basis%length, red_basis%length)
+  call setup_dmat(Hk%H, red_basis%length, red_basis%length, scope_in = pot_scope)
   if (okvan) then
     call copy_dmat(Hk%S, Hk%H)
     allocate(S_matrix2(size(Hk%S%dat, 1), size(Hk%S%dat,2)))
@@ -216,7 +216,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... main q-point loop
   !
-  do q = 1+me_pool, qpoints%nred, nproc_pool
+  do q = 1+my_pot_id, qpoints%nred, npot
     !
     ! ... Build dense S matrix 
     !
@@ -229,9 +229,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     if (okvan) then
       CALL start_clock(' build_mat' )
       if (basis_age == 0) then
-        call build_s_matrix(pp, (1-q)/nproc_pool - 1, Hk)
+        call build_s_matrix(pp, (1-q)/npot - 1, Hk)
       else
-        call build_s_matrix(pp, (q-1)/nproc_pool + 1, Hk)
+        call build_s_matrix(pp, (q-1)/npot + 1, Hk)
       endif
       CALL stop_clock(' build_mat' )
     end if
@@ -315,8 +315,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     enddo 
   enddo 
   call start_clock(  ' other')
-  call mp_sum(energies, intra_pool_comm)
-  energies = energies / nproc_pot
+  call mp_sum(energies, inter_pot_comm)
+!  write(*,*) "energies: ", energies(1:5,4)
+  energies = energies 
   deallocate(S_matrix2)
 #ifdef DAVID
   deallocate(P, Pinv)
@@ -381,7 +382,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   endif
 
   ! ... add ultra-soft correction
-  !write(*,*) shape(becsum), becsum
   if (okvan)  call addusdens_g(becsum, rho%of_r)
 
   ! ... symmetrize rho(G) 

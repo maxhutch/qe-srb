@@ -9,7 +9,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
   ! Diagonalizes a Hermitian matrix, providing eigenvalues and eigenvectors
   USE kinds, ONLY: DP
   use srb_types, only : kproblem
-  use srb_matrix, only : dmat
+  use srb_matrix, only : dmat, print_dmat
   USE constants,        ONLY : pi
 
   USE scalapack_mod, only : scalapack_diag, nprow, npcol, ctx_sq, desc_sq
@@ -80,6 +80,8 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
       allocate(iclustr(2*Hk%H%nprow*Hk%H%npcol), gap(Hk%H%nprow*Hk%H%npcol))
       allocate(work(1), rwork(1), iwork(1))
       allocate(z(size(Hk%H%dat,1),size(Hk%H%dat,2)))
+!      call print_dmat(Hk%H)
+!      call print_dmat(Hk%S)
       call pzhegvx(1, 'V', 'I', 'U', n, &
                    Hk%H%dat, 1, 1, Hk%H%desc, &
                    Hk%S%dat, 1, 1, Hk%S%desc, &
@@ -105,7 +107,11 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
                    work, lwork, rwork, lrwork, iwork, liwork, &
                    ifail, iclustr, gap, ierr)
       if (ierr /= 0) write(*,*) "zhegvx error: ", ierr
-      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
+      if (Hk%H%desc(2) == evecs%desc(2)) then
+        evecs%dat(:,1:num) = z(:,1:num)
+      else
+        call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
+      endif
       deallocate(z)
       deallocate(work, rwork, iwork)
       deallocate(ifail, iclustr, gap)
@@ -152,7 +158,11 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
                   z, 1, 1, Hk%H%desc, &
                   work, lwork, rwork, lrwork, iwork, liwork, &
                   ifail, iclustr, gap, ierr) 
-      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
+      if (Hk%H%desc(2) == evecs%desc(2)) then
+        evecs%dat(:,1:num) = z(:,1:num)
+      else
+        call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc)
+      endif
       deallocate(z)
       deallocate(ifail, iclustr, gap)
       deallocate(work, rwork, iwork)

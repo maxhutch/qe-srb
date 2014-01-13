@@ -169,7 +169,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
     if (k == 1 .and. nspin == 1) then
       evc(1:ngk_orig(k),:) = evc_in(1:ngk_orig(k),:)
     else
-      write(*,*) "Loading k-point ", k
       CALL get_buffer ( evc, nwordwfc, iunwfc, k )
     end if
 
@@ -314,9 +313,8 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   nbasis = nbnd * nks ! global array size
   call setup_dmat(S, nbasis, nbasis, scope_in = pool_scope)
   call setup_dmat(B, nbasis, nbasis, scope_in = pool_scope)
-!  call setup_desc(S_desc, nbasis, nbasis)
-!  call scalapack_distrib(nbasis, nbasis, nbasis_lr, nbasis_lc) ! setup desc in scalapack_mod
-!  allocate(S_l(S_desc%nrl, S_desc%ncl), B_l(S_desc%nrl, S_desc%ncl), eigU(nbasis))
+!  call print_dmat(S)
+!  call print_dmat(B)
   allocate(eigU(nbasis))
 !  S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
   eigU = 0.d0 
@@ -371,11 +369,21 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
 #if 1
   call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
 
+!  call print_dmat(Z)
+!  call print_dmat(B)
+  if (me_pool == 0) then
   call pzgemr2d(nbasis, nbasis_trunc, &
                 B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
                 Z%dat, 1, 1, Z%desc, &
                 B%desc(2))
-
+  else
+  Z%desc(2) = -1 
+  call pzgemr2d(nbasis, nbasis_trunc, &
+                B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
+                Z%dat, 1, 1, Z%desc, &
+                B%desc(2))
+  endif
+  call mp_sum(Z%dat, intra_pool_comm)
   ! transform <G|psi><psi|B>
   call ZGEMM('N', 'N', ngk_gamma, nbasis_trunc, nbasis, one, & 
              evc_all, npwx_tmp, &

@@ -18,7 +18,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   use symme, only : sym_rho 
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
-  use mp_global, only : intra_pool_comm, me_pool, nproc_pool
+  use mp_global, only : my_pot_id, npot, intra_pool_comm
   USE wvfct, only: ecutwfc_int => ecutwfc
   use buffers, only : get_buffer
 
@@ -58,9 +58,9 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   call copy_dmat(tmp, states%host_ar(1))
 
   trace = 0.
-  do k = 1+me_pool, nk, nproc_pool
+  do k = 1+my_pot_id, nk, npot
    do spin = 1, nspin
-    q = (k+(spin-1)*(nk+nproc_pool)-1)/nproc_pool + 1
+    q = (k+(spin-1)*(nk+npot)-1)/npot + 1
     
 
   ! Form a charge density
@@ -107,10 +107,6 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
 #endif
    enddo
   enddo
-  write(*,*) "Trace(rho) = ", trace
-  do spin = 1, nspin
-     call mp_sum(rho(spin)%dat, intra_pool_comm)
-  enddo
 
   deallocate(root)
 
@@ -120,9 +116,9 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   if (size(betawfc%host_ar) == 0) return 
   call start_clock('  addproj')
 
-  kpoint: do k = 1+me_pool, nk, nproc_pool
+  kpoint: do k = 1+my_pot_id, nk, npot
    do  spin = 1,nspin 
-    q = (k+(spin-1)*(nk+nproc_pool)-1)/nproc_pool + 1
+    q = (k+(spin-1)*(nk+npot)-1)/npot + 1
 
   if (size(betawfc%host_ar) == 1) then
     ptr = 1 

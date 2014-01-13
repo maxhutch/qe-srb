@@ -7,6 +7,7 @@ module srb_matrix
     integer :: mycol
     integer :: nprow
     integer :: npcol
+    integer :: scope
   end type dmat
 #if 0
   type mydesc
@@ -28,8 +29,10 @@ module srb_matrix
   integer :: ctx_s(nscope)
   integer :: nprow(nscope)
   integer :: npcol(nscope)
+  integer :: first_proc(nscope)
   integer :: ctx_r(nscope)
   integer :: ctx_c(nscope)
+  integer :: comm_scope(nscope)
 
   integer, external :: numroc
 
@@ -59,24 +62,49 @@ module srb_matrix
 
 
   subroutine srb_matrix_init()
-    use mp_global, only : nproc_pot, nproc_pool
+    use mp_global, only : nproc_pot, nproc_pool, my_pot_id, my_pool_id, me_pot
+    use mp_global, only : intra_pot_comm, intra_pool_comm
+    use mp, only: mp_barrier
     implicit none
 
-    integer :: i, foo, bar
+    integer :: i, prow, pcol, foo, bar
     integer :: nproc(nscope)
+    integer, allocatable :: map(:,:)
 
     nproc(1) = serial_scope
     nproc(2) = nproc_pot 
     nproc(3) = nproc_pool
+    comm_scope(1) = intra_pot_comm ! not quite right
+    comm_scope(2) = intra_pot_comm ! not quite right
+    comm_scope(3) = intra_pool_comm ! not quite right
+    first_proc(3) = 0!my_pool_id*nproc_pool
+    first_proc(2) = 0!first_proc(3) + my_pot_id * nproc_pot
+    first_proc(1) = 0!first_proc(2) + me_pot
 
+    ctx_s = comm_scope
+    ctx_r = comm_scope
+    ctx_c = comm_scope
+
+    write(*,*) "nproc: ", nproc
+    allocate(map(nproc(nscope), nproc(nscope)))
     ! create three contexts for each scope
     do i = 1, nscope
+      map = -1
       ! stripes are easy
-      call blacs_get( -1, 0, ctx_r(i) )
-      call blacs_gridinit( ctx_r(i), 'c', nproc(i), 1 )
-
-      call blacs_get( -1, 0, ctx_c(i) )
-      call blacs_gridinit( ctx_c(i), 'c', 1, nproc(i))
+      do prow = 1, nproc(i)
+        map(prow, 1) = first_proc(i) + prow - 1
+      enddo
+      write(*,*) "ctx_r", map
+      !call blacs_get( -1, 0, ctx_r(i) )
+      call blacs_gridmap( ctx_r(i), map, nproc(nscope), nproc(i), 1 )
+      call mp_barrier(intra_pool_comm)
+      do pcol = 1, nproc(i)
+        map(1, pcol) = first_proc(i) + pcol - 1
+      enddo
+      write(*,*) "ctx_c", map
+      !call blacs_get( -1, 0, ctx_c(i) )
+      call blacs_gridmap( ctx_c(i), map, nproc(nscope), 1, nproc(i))
+      call mp_barrier(intra_pool_comm)
 
       ! square takes some thinking
       nprow(i) = max(1, int(sqrt(dble(nproc(i)))))
@@ -85,8 +113,21 @@ module srb_matrix
         nprow(i) = nprow(i) + 1
         npcol(i) = nproc(i)/nprow(i) 
       enddo
-      call blacs_get( -1, 0, ctx_s(i) )
-      call blacs_gridinit( ctx_s(i), 'c', nprow(i), npcol(i))
+      do prow = 1, nprow(i)
+        do pcol = 1, npcol(i) 
+          map(prow, pcol) = first_proc(i) + prow + (pcol - 1)*nprow(i) - 1
+        enddo
+      enddo
+      write(*,*) "ctx_s", map
+      !call blacs_get( -1, 0, ctx_s(i) )
+      call blacs_gridmap( ctx_s(i), map, nproc(nscope), nprow(i), npcol(i))
+      call mp_barrier(intra_pool_comm)
+      write(*,'(A,I1,A,4I3)') "ctx_s(",i,"): ", ctx_s(i), nprow(i), npcol(i), my_pot_id
+      call mp_barrier(intra_pool_comm)
+      write(*,'(A,I1,A,4I3)') "ctx_r(",i,"): ", ctx_r(i), nproc(i), 1, my_pot_id
+      call mp_barrier(intra_pool_comm)
+      write(*,'(A,I1,A,4I3)') "ctx_c(",i,"): ", ctx_c(i), 1, nproc(i), my_pot_id
+      call mp_barrier(intra_pool_comm)
     enddo
 
   end subroutine srb_matrix_init
@@ -99,42 +140,41 @@ module srb_matrix
     integer, intent(in), optional :: mb_in, nb_in
     integer, intent(in), optional :: scope_in
 
-    integer :: mb, nb, scope, ctx, nrl, ncl, info
+    integer :: mb, nb, ctx, nrl, ncl, info
 
     ! default scope is pool
     if (present(scope_in)) then
-      scope = scope_in
+      A%scope = scope_in
     else
-      scope = pool_scope
+      A%scope = pool_scope
     endif
 
     ! pick reasonable default blocks
     if (present(mb_in)) then
       mb = mb_in
     else
-      if (nprow(scope) == 1) then
+      if (nprow(A%scope) == 1) then
         mb = m
       else
-        write(*,*) m, nprow(scope)
-        mb = max(4,4*(m/(4*nprow(scope))))
+        mb = max(4,4*(m/(4*nprow(A%scope))))
       endif
     endif
     if (present(nb_in)) then
       nb = nb_in
     else
-      if (npcol(scope) == 1) then
+      if (npcol(A%scope) == 1) then
         nb = n
       else
-        nb = max(4,4*(n/(4*npcol(scope))))
+        nb = max(4,4*(n/(4*npcol(A%scope))))
       endif
     endif
 
-    if (nprow(scope) > 1 .and. nb == n) then
-      ctx = ctx_c(scope) ! parallel over columns
-    else if (npcol(scope) > 1 .and. mb == m) then
-      ctx = ctx_r(scope) ! parallel over rows
+    if (nprow(A%scope) > 1 .and. nb == n) then
+      ctx = ctx_c(A%scope) ! parallel over columns
+    else if (npcol(A%scope) > 1 .and. mb == m) then
+      ctx = ctx_r(A%scope) ! parallel over rows
     else
-      ctx = ctx_s(scope) ! parallel over both
+      ctx = ctx_s(A%scope) ! parallel over both
     endif 
     call blacs_gridinfo(ctx, A%nprow, A%npcol, A%myrow, A%mycol)
     nrl = numroc(m, mb, A%myrow, 0, A%nprow)
@@ -212,10 +252,9 @@ module srb_matrix
   end subroutine setup_desc
 #endif
 #define CHUNK 32
-  subroutine block_inner(n, k, alpha, A, lda, B, ldb, beta, C)
+  subroutine block_inner(n, k, alpha, A, lda, B, ldb, beta, C, comm_in)
     use kinds, only : DP
     use mp, only : mp_sum 
-    use mp_global, only: intra_pool_comm
 
     implicit none
 
@@ -225,11 +264,18 @@ module srb_matrix
     complex(DP),  intent(in)   :: B(*)
     type(dmat),   intent(inout) :: C
     complex(DP),  intent(in)  :: alpha, beta
+    integer, intent(in), optional :: comm_in
 
     integer :: i,j,blocki,blockj,ip,jp,i_l,j_l,prow,pcol
     complex(DP), allocatable :: Z(:,:)
     complex(DP), parameter :: one  = cmplx(1.d0,kind=DP)
     complex(DP), parameter :: zero = cmplx(0.d0,kind=DP)
+    integer :: comm
+    if (present(comm_in)) then
+      comm = comm_in
+    else
+      call blacs_get(C%desc(2), 10, comm)
+    endif
     allocate(Z(CHUNK, CHUNK))
 
     do j = 1, n, CHUNK
@@ -240,7 +286,7 @@ module srb_matrix
                    alpha, A(1+(i-1)*lda), lda, &
                           B(1+(j-1)*ldb), ldb, &
                    zero , Z             , CHUNK)
-        call mp_sum(Z, intra_pool_comm)
+        call mp_sum(Z, comm)
         do jp = 1,blockj
           do ip = 1,blocki
              call infog2l( i+ip-1, j+jp-1, &
@@ -259,10 +305,8 @@ module srb_matrix
 
 #define CHUNK 32
   subroutine block_outer(n, k, alpha, A, lda, B, ldb, beta, C)
-!  subroutine block_inner(n, k, A, lda, B, ldb, C, C_desc)
     use kinds, only : DP
     use mp, only : mp_sum 
-    use mp_global, only: intra_pool_comm
 
     implicit none
 
@@ -277,6 +321,9 @@ module srb_matrix
     complex(DP), allocatable :: Z(:,:)
     complex(DP), parameter :: one  = cmplx(1.d0,kind=DP)
     complex(DP), parameter :: zero = cmplx(0.d0,kind=DP)
+    integer :: comm
+    call blacs_get(C%desc(2), 10, comm)
+
     allocate(Z(CHUNK, CHUNK))
 
     do j = 1, n, CHUNK
@@ -287,7 +334,7 @@ module srb_matrix
                    alpha, A(i), lda, &
                           B(j), ldb, &
                    zero , Z             , CHUNK)
-        call mp_sum(Z, intra_pool_comm)
+        call mp_sum(Z, comm)
         do jp = 1,blockj
           do ip = 1,blocki
             call infog2l( i+ip-1, j+jp-1, &
@@ -325,6 +372,8 @@ module srb_matrix
 
   subroutine diag(A, W, Z, B, num_in)
     use kinds, only : DP
+    use mp_global, only : me_image, intra_pool_comm
+    use mp, only : mp_sum
     implicit none
     
     type(dmat) :: A
@@ -340,7 +389,7 @@ module srb_matrix
     integer, allocatable :: ifail(:), iclustr(:), iwork(:)
     real(DP), allocatable :: rwork(:), gap(:)
     complex(DP), allocatable :: work(:)
-    integer :: info, lwork, lrwork, liwork, nv_out, ne_out
+    integer :: info, lwork, lrwork, liwork, nv_out, ne_out, ctx_tmp
     real(DP) :: abstol
     real(DP), external :: PDLAMCH
     if (present(num_in)) then
@@ -384,10 +433,19 @@ module srb_matrix
                    work, lwork, rwork, lrwork, iwork, liwork, &
                    ifail, iclustr, gap, info)
       if (use_tmp) then
-        call pzgemr2d(A%desc(3), num, &
-                      ztmp,  1, 1, tmp_desc, &
-                      Z%dat, 1, 1, Z%desc, &
-                      tmp_desc(2))
+        if ( Z%scope == 1 .and. A%scope == 3 ) then
+          Z%dat = 0.d0
+          if (me_image .ne. 0) then
+            ctx_tmp = Z%desc(2)
+            Z%desc(2) = -1
+          endif
+          call pzgemr2d(A%desc(3), num, &
+                        ztmp,  1, 1, tmp_desc, &
+                        Z%dat, 1, 1, Z%desc, &
+                        tmp_desc(2))
+          call mp_sum(Z%dat, intra_pool_comm)
+          if (me_image .ne. 0) Z%desc(2) = ctx_tmp  
+        endif
       endif
     endif
 

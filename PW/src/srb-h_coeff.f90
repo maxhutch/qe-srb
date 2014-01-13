@@ -7,7 +7,6 @@
 SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   USE kinds, ONLY : DP
   USE mp_global, ONLY: intra_pool_comm, me_pool
-  USE mp, ONLY: mp_sum, mp_barrier
 
   USE srb_types, ONLY : basis, ham_expansion
   USE srb_matrix, only : block_inner, dmat, copy_dmat
@@ -87,7 +86,8 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
     call block_inner(nbnd, npw, &
                      one,  opt_basis%elements, npw, &
                            buffer,             npw, &
-                     zero, ham%con(1))
+                     zero, ham%con(1), &
+                     intra_pool_comm)
 
     if (nspin == 2) ham%con(2)%dat = ham%con(1)%dat
     ham%kin_con%dat = ham%con(1)%dat
@@ -106,12 +106,12 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
       call block_inner(nbnd, npw, &
                        one,  opt_basis%elements, npw, &
                              buffer,             npw, &
-                       zero, tmp_mat)
+                       zero, tmp_mat, &
+                       intra_pool_comm)
       ham%lin(ixyz,:,:) = tmp_mat%dat
     enddo
 !    deallocate(gtmp, buffer)
     deallocate(buffer, tmp_mat%dat)
-    call mp_sum(ham%lin, intra_pool_comm)
   endif 
   ! quadratic term is analytic (\delta(k,k) |k|^2), so we just add it in later
 
@@ -146,7 +146,8 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   call block_inner(nbnd, npw, &
                    one, opt_basis%elements, npw, &
                         gtmp,               npw, &
-                   one, ham%con(s))
+                   one, ham%con(s), &
+                   intra_pool_comm)
   enddo spin
   deallocate(buffer, gtmp)
   deallocate(igk, g2kin)

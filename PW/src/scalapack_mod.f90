@@ -81,7 +81,7 @@
 !  write(200+iam,*) ' nblock = ', nblock
 !  write(200+iam,*) ' nr_l = ', nr_l
 !  write(200+iam,*) ' nc_l = ', nc_l
-  call descinit( desc_sq, nr, nc, nblock, nblock, 0, 0, ctx_sq, max(1,nr_l), info )
+!  call descinit( desc_sq, nr, nc, nblock, nblock, 0, 0, ctx_sq, max(1,nr_l), info )
 !  write(200+iam,*) ' desc_sq = ', desc_sq
   end subroutine scalapack_distrib
 
