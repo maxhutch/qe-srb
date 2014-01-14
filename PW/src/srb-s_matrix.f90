@@ -57,12 +57,7 @@ subroutine build_s_matrix(pp, q, Hk)
     allocate(S_half(nbasis, size(pp%projs(t)%dat,2)))
     allocate(rwork(2*nhm*nbasis))
     ioff = 1 !index offset
-    do a = 1, pp%na(t)
-      call infog2l(1+(a-1)*nh(t), 1, &
-                   pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
-                                     pp%projs(t)%myrow, pp%projs(t)%mycol, &
-                   i_l, j_l, prow, pcol)
-      if (prow == pp%projs(t)%myrow .and. pcol == pp%projs(t)%mycol) then
+    do a = 1, size(pp%projs(t)%dat, 2)/nh(t)
         ! Do the left side of the transformation
         call zlacrm(nbasis, nh(t), &
                     pp%projs(t)%dat(:,ioff:ioff+nh(t)), nbasis, &
@@ -70,7 +65,6 @@ subroutine build_s_matrix(pp, q, Hk)
                     S_half(:, ioff:ioff+nh(t)), nbasis, &
                     rwork)
         ioff = ioff + nh(t)
-      endif
     enddo
 
     ! Do the right side of the transformation, summing into S_matrix

@@ -68,7 +68,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
     allocate(rwork(2*nhm*nbasis))
     ioff = 1 !index offset
     do a = 1, pp%na(t)
-      call infog2l(1+(a-1)*nh(t), 1, &
+      call infog2l(1, 1+(a-1)*nh(t), &
                    pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
                                      pp%projs(t)%myrow, pp%projs(t)%mycol, &
                    i_l, j_l, prow, pcol)

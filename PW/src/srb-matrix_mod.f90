@@ -66,7 +66,7 @@ module srb_matrix
     use mp_global, only : intra_pot_comm, intra_pool_comm
     use mp, only: mp_barrier
     implicit none
-
+    include 'mpif.h'
     integer :: i, prow, pcol, foo, bar
     integer :: nproc(nscope)
     integer, allocatable :: map(:,:)
@@ -74,7 +74,7 @@ module srb_matrix
     nproc(1) = serial_scope
     nproc(2) = nproc_pot 
     nproc(3) = nproc_pool
-    comm_scope(1) = intra_pot_comm ! not quite right
+    comm_scope(1) = MPI_COMM_SELF ! not quite right
     comm_scope(2) = intra_pot_comm ! not quite right
     comm_scope(3) = intra_pool_comm ! not quite right
     first_proc(3) = 0!my_pool_id*nproc_pool
@@ -107,7 +107,7 @@ module srb_matrix
       call mp_barrier(intra_pool_comm)
 
       ! square takes some thinking
-      nprow(i) = max(1, int(sqrt(dble(nproc(i)))))
+      nprow(i) = max(1, int(0.99999 + sqrt(dble(nproc(i)))))
       npcol(i) = nproc(i) / nprow(i)
       do while (nproc(i) - nprow(i) * npcol(i) > 0)
         nprow(i) = nprow(i) + 1
@@ -173,9 +173,9 @@ module srb_matrix
       endif
     endif
 
-    if (nprow(A%scope) > 1 .and. nb == n) then
+    if (nprow(A%scope) > 1 .and. mb == m) then
       ctx = ctx_c(A%scope) ! parallel over columns
-    else if (npcol(A%scope) > 1 .and. mb == m) then
+    else if (npcol(A%scope) > 1 .and. nb == n) then
       ctx = ctx_r(A%scope) ! parallel over rows
     else
       ctx = ctx_s(A%scope) ! parallel over both

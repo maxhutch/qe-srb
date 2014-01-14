@@ -116,6 +116,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   if (size(betawfc%host_ar) == 0) return 
   call start_clock('  addproj')
 
+  call copy_dmat(tmp, betawfc%host_ar(1))
   kpoint: do k = 1+my_pot_id, nk, npot
    do  spin = 1,nspin 
     q = (k+(spin-1)*(nk+npot)-1)/npot + 1
@@ -127,10 +128,10 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
     ptr = q
   endif
 
+  call col_scal(betawfc%host_ar(ptr), tmp, wg(:,k+(spin-1)*nk))
   band: DO ibnd = 1, nbnd
     !
-    if (abs(wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk)) < W_TOL) cycle
-    w1 = wg(ibnd, k+(spin-1)*nk) !/ omega
+    !if (abs(wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk)) < W_TOL) cycle
     ioff = 0
     type: do t = 1, nsp 
     atom: do a = 1, nat
@@ -139,11 +140,11 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
       proj1: do ih = 1, nh(t)
         ijh = ijh + 1
         becsum(ijh, a, spin) = becsum(ijh, a, spin) + &
-          w1 * DBLE(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd) * CONJG(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd)))
+          DBLE(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd) * CONJG(tmp%dat(ioff + ih, ibnd)))
         proj2: do jh = (ih + 1), nh(t)
           ijh = ijh + 1
           becsum(ijh, a, spin) = becsum(ijh, a, spin) + &
-            2.d0 * w1 * DBLE(betawfc%host_ar(ptr)%dat(ioff + jh, ibnd) * CONJG(betawfc%host_ar(ptr)%dat(ioff + ih, ibnd)))
+            2.d0 * DBLE(betawfc%host_ar(ptr)%dat(ioff + jh, ibnd) * CONJG(tmp%dat(ioff + ih, ibnd)))
         enddo proj2
       enddo proj1
       ioff = ioff + nh(t)
@@ -155,7 +156,6 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   call mp_sum(becsum, intra_pool_comm)
 
   call stop_clock('  addproj')
-
 
   return
 

@@ -4,7 +4,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   USE kinds, ONLY : DP
   use constants, only : tpi
   USE srb_types, ONLY : basis, pseudop
-  use srb_matrix, only : setup_dmat, load_from_local, pot_scope
+  use srb_matrix, only : setup_dmat, load_from_local, pot_scope, print_dmat
 
   use input_parameters, only : proj_tol
   USE us, ONLY : dq, tab
@@ -75,10 +75,12 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     pp%nkb_l = 0
     do t = 1, ntyp    
       call setup_dmat(pp%projs(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t), pot_scope)
+      call print_dmat(pp%projs(t))
       pp%nkb_l = pp%nkb_l + size(pp%projs(t)%dat,2) 
       pp%p_unit(t) = 3000+t
       write(fname, '(A6,I4)') "projs_", t
-      call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
+      if (size(pp%projs(t)%dat) > 0) &
+        call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
       old_basis_length = opt_basis%length
     enddo
     jkb = 1
@@ -109,7 +111,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   allocate (ylm(npw, (lmaxkb + 1)**2), gk(3, npw), qg(npw), vq(npw))
 
   ! if we have a longer buffer - adjust size of file dynamically
-  if (opt_basis%length > old_basis_length) then
+  if (opt_basis%length > old_basis_length .and. size(pp%projs(t)%dat) > 0) then
     do t = 1, ntyp    
       call close_buffer(pp%p_unit(t),'delete')
       write(fname, '(A6,I4)') "projs_", t
@@ -247,7 +249,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
         call stop_clock('  proj_gemm')
         ! save!
         call start_clock('  proj_save')
-        if (MOD(q-1, npot) == my_pot_id) then
+        if (MOD(q-1, npot) == my_pot_id .and. size(pp%projs(t)%dat) > 0) then
           call save_buffer(pp%projs(t)%dat, size(pp%projs(t)%dat), pp%p_unit(t), (q-1)/npot+1)
         endif
         call stop_clock('  proj_save')

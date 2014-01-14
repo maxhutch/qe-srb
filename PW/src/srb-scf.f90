@@ -156,7 +156,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   ! ... Setup dense data structures
   !
-  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length,min(16,nbnd), pot_scope)
+  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length, min(16,nbnd/nproc_pot), pot_scope)
   if (allocated(energies)) deallocate(energies)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
   energies = 0.d0
@@ -187,7 +187,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       allocate(bstates%host_ar(0))
     else 
       allocate(bstates%host_ar(bstates%nk+npot))
-      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd), pot_scope)
+      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd/nproc_pot), pot_scope)
       do q = 2,states%nk+npot
         call copy_dmat(bstates%host_ar(q), bstates%host_ar(1))
       enddo
@@ -199,7 +199,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       allocate(bstates%host_ar(0))
     else
       allocate(bstates%host_ar(1))
-      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd), pot_scope)
+      call setup_dmat(bstates%host_ar(1), nkb, nbnd, nkb, min(16,nbnd/nproc_pot), pot_scope)
     endif
   endif
 

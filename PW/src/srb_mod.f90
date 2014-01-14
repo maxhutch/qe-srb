@@ -365,7 +365,7 @@ CONTAINS
     !==========================================================================
     !call init_splines()
 
-    call mp_start_pots(nproc_pool, intra_pool_comm)
+    !call mp_start_pots(nproc_pool, intra_pool_comm)
     !call scalapack_init(me_pot, nproc_pot)
     call srb_matrix_init()
     write(*,*) "I am", my_pool_id, my_pot_id, me_pot

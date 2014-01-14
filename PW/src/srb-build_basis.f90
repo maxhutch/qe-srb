@@ -368,9 +368,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
 
 #if 1
   call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
-
-!  call print_dmat(Z)
-!  call print_dmat(B)
   if (me_pool == 0) then
   call pzgemr2d(nbasis, nbasis_trunc, &
                 B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
