@@ -17,7 +17,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
   USE constants,            ONLY : eps8
   USE klist,                ONLY : nks, xk
   USE lsda_mod,             ONLY : current_spin, lsda, isk, nspin
-  USE wvfct,                ONLY : npw, npwx, nbnd, igk, wg, et
+  USE wvfct,                ONLY : npw, npwx, igk, wg, et
   USE control_flags,        ONLY : gamma_only
   USE uspp_param,           ONLY : upf, lmaxkb, nh, newpseudo, nhm
   USE uspp,                 ONLY : nkb, vkb, qq, deeq, deeq_nc, qq_so
@@ -63,6 +63,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        ! 
        ! ... gamma version
        !
+       USE wvfct,                ONLY :  nbnd
        IMPLICIT NONE
        !
        ! ... local variables
@@ -315,6 +316,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        !
        use srb, only : qpoints, states, bstates, wgq, scb, ets
        use cell_base, only : bg
+       use mp_global, only : root_pot, my_pot_id
        IMPLICIT NONE
        !
        ! ... local variables
@@ -329,6 +331,8 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        REAL(DP), ALLOCATABLE :: deff(:,:,:)
        ! dvkb contains the derivatives of the kb potential
        COMPLEX(DP)              :: ps, ps_nc(2)
+       integer :: nbnd, ibnd_g
+       integer, external :: indxl2g
        ! xyz are the three unit vectors in the x,y,z directions
        DATA xyz / 1.0d0, 0.0d0, 0.0d0, 0.0d0, 1.0d0, 0.0d0, 0.0d0, 0.0d0, 1.0d0 /
        !
@@ -338,6 +342,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        current_spin = (ik_-1)/qpoints%nred + 1
        ik = ik_ - (current_spin-1)*qpoints%nred
        npw = size(scb%elements, 1)
+       nbnd = size(states%host_ar(1)%dat,2)
        if (noncolin) then
           ALLOCATE( work2_nc(npwx,npol) )
           ALLOCATE( deff_nc(nhm,nhm,nat,nspin) )
@@ -359,18 +364,21 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        evps = 0.D0
        ! ... diagonal contribution
        !
-       IF ( me_pool /= root_pool ) GO TO 100
+       IF ( my_pot_id /= root_pot ) GO TO 100
        !
        ! ... the contribution is calculated only on one processor because
        ! ... partial results are later summed over all processors
        !
        DO ibnd = 1, nbnd
-          fac = wgq(ibnd,ik_)
+           ibnd_g = indxl2g(ibnd, &
+                            states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
+                            states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
+          fac = wgq(ibnd_g,ik_)
           IF (ABS(fac) < 1.d-9) CYCLE
           IF (noncolin) THEN
-             CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
+             CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
           ELSE
-             CALL compute_deff(deff,ets(ibnd,ik_))
+             CALL compute_deff(deff,ets(ibnd_g,ik_))
           ENDIF
           ijkb0 = 0
           DO np = 1, ntyp
@@ -438,12 +446,16 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        CALL gen_us_dj(npw, igk, matmul( bg, qpoints%xr(:,ik) - floor(qpoints%xr(:,ik))), dvkb )
        !
        DO ibnd = 1, nbnd
+         ibnd_g = indxl2g(ibnd, &
+                          states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
+                          states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
+
           IF (noncolin) THEN
              work2_nc = (0.D0,0.D0)
-             CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
+             CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
           ELSE
              work2 = (0.D0,0.D0)
-             CALL compute_deff(deff,ets(ibnd,ik_))
+             CALL compute_deff(deff,ets(ibnd_g,ik_))
           ENDIF
           ijkb0 = 0
           DO np = 1, ntyp
@@ -517,10 +529,10 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                                    ddot(2*npw,work2,1,work2_nc(1,2), 1) )
                 ELSE
                    DO i = 1, npw
-                      work1(i) = evc(i,ibnd)*gk(ipol,i)*gk(jpol,i)*qm1(i)
+                      work1(i) = evc(i,ibnd_g)*gk(ipol,i)*gk(jpol,i)*qm1(i)
                    END DO
                    sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                                      2.D0 * wgq(ibnd,ik_) * &
+                                      2.D0 * wgq(ibnd_g,ik_) * &
                                       ddot( 2 * npw, work1, 1, work2, 1 )
                 END IF
              END DO
@@ -535,12 +547,15 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        DO ipol = 1, 3
           CALL gen_us_dy(npw, igk, matmul( bg, qpoints%xr(:,ik) - floor(qpoints%xr(:,ik))), xyz(1,ipol), dvkb )
           DO ibnd = 1, nbnd
+            ibnd_g = indxl2g(ibnd, &
+                          states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
+                          states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
              IF (noncolin) THEN
                 work2_nc = (0.D0,0.D0)
-                CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
+                CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
              ELSE
                 work2 = (0.D0,0.D0)
-                CALL compute_deff(deff,ets(ibnd,ik_))
+                CALL compute_deff(deff,ets(ibnd_g,ik_))
              ENDIF
 
              ijkb0 = 0
@@ -612,10 +627,10 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                               ddot( 2 * npw, work2, 1, work2_nc(1,2), 1 ) )
                 ELSE
                    DO i = 1, npw
-                      work1(i) = evc(i,ibnd) * gk(jpol,i)
+                      work1(i) = evc(i,ibnd_g) * gk(jpol,i)
                    END DO
                    sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                                      2.D0 * wgq(ibnd,ik_) * & 
+                                      2.D0 * wgq(ibnd_g,ik_) * & 
                                       ddot( 2 * npw, work1, 1, work2, 1 )
                END IF
              END DO

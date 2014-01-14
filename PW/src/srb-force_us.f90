@@ -22,7 +22,7 @@ SUBROUTINE force_us_srb( forcenl )
   USE gvect,                ONLY : g
   USE uspp,                 ONLY : nkb, qq, deeq, qq_so, deeq_nc
   USE uspp_param,           ONLY : upf, nh, newpseudo, nhm
-  USE wvfct,                ONLY : nbnd, wg, et, ecutwfc
+  USE wvfct,                ONLY : wg, et, ecutwfc
   USE lsda_mod,             ONLY : lsda, current_spin, isk, nspin
   USE symme,                ONLY : symvector
   USE wavefunctions_module, ONLY : evc
@@ -63,7 +63,7 @@ SUBROUTINE force_us_srb( forcenl )
        ! ... calculation at gamma
        !
        USE becmod, ONLY : calbec
-       use wvfct, only : igk, npw, npwx
+       use wvfct, only : igk, npw, npwx, nbnd
        use uspp, only : vkb
        IMPLICIT NONE
        !
@@ -196,7 +196,7 @@ SUBROUTINE force_us_srb( forcenl )
        use gvect, only : ngm
        use cell_base, only : tpiba2, tpiba
        use wvfct, only : npwx_int => npwx
-       use mp_global, only : nproc_pool, me_pool
+       use mp_global, only :  npot, my_pot_id, intra_pot_comm, inter_pot_comm
        IMPLICIT NONE
        !
        REAL(DP) :: forcenl(3,nat)
@@ -215,14 +215,18 @@ SUBROUTINE force_us_srb( forcenl )
        REAL(DP) :: ps
        INTEGER       :: ik, ipol, ibnd, ig, ih, jh, na, nt, ikb, jkb, ijkb0, &
                         is, js, ijs, s
+       integer :: ibnd_g
        COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
-       integer :: npw, npwx_tmp
+       integer :: npw, npwx_tmp, nbnd
+       integer, external :: indxl2g
        type(dmat) :: tmp_mat
        ! counters
        !
        !
        forcenl(:,:) = 0.D0
        if (nkb < 1) return
+       !
+       nbnd = size(states%host_ar(1)%dat,2)
        !
        IF (noncolin) then
           ALLOCATE( dbecp_nc(nkb,npol,nbnd,3) )
@@ -256,7 +260,7 @@ SUBROUTINE force_us_srb( forcenl )
              else
              DO jkb = 1, nkb
                 DO ig = 1, npw
-                   vkb1(ig,jkb) = vkb(ig,jkb)*(0.D0,-1.D0)*(g(ipol,igk(ig)) + qcart(ipol))!*exp((0.d0, -1.d0) * (qpoints%xr(ipol, ik) - floor(qpoints%xr(ipol, ik))))
+                   vkb1(ig,jkb) = vkb(ig,jkb)*(0.D0,-1.D0)*(g(ipol,igk(ig)) + qcart(ipol))
                 END DO
              END DO
              endif
@@ -266,40 +270,39 @@ SUBROUTINE force_us_srb( forcenl )
                         vkb1, npw, zero, &
                         dprojs(:,:,ipol), scb%length)
           END DO
-!          call mp_sum(dprojs, intra_pool_comm)
+          call mp_sum(dprojs, intra_pot_comm)
         do s = 1, nspin
           ! grab the states <B|psi>
           call copy_dmat(tmp_mat, states%host_ar(1))
           if (size(states%host_ar) == 1) then
-            if (MOD(ik-1, nproc_pool) == me_pool) then
+            if (MOD(ik-1, npot) == my_pot_id) then
               call get_buffer(tmp_mat%dat, scb%length*nbnd, states%file_unit, (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
             endif
           else
-            if (MOD(ik-1, nproc_pool) == me_pool) then
+            if (MOD(ik-1, npot) == my_pot_id) then
               tmp_mat%dat = states%host_ar((ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)%dat
             endif
           endif
           call mp_sum(tmp_mat%dat, inter_pot_comm)
 
           ! grab the projector states <beta|psi>
+          becp%k = cmplx(0.d0, kind=DP)
           if (size(bstates%host_ar) == 0) then
             call ZGEMM('C', 'N', nkb, nbnd, scb%length, one, &
                        dprojs(:,:,0), scb%length, &
                        tmp_mat%dat, scb%length, zero, &
                        becp%k, nkb)
-            call mp_sum(becp%k, intra_pool_comm)
+            !call mp_sum(becp%k, intra_pool_comm)
           else if (size(bstates%host_ar) == 1) then
-            becp%k = cmplx(0.d0, kind=DP)
-            if (MOD(ik-1, nproc_pool) == me_pool) then
-              call get_buffer(becp%k, nkb*nbnd, bstates%file_unit, (ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
+            if (MOD(ik-1, npot) == my_pot_id) then
+              call get_buffer(becp%k, nkb*nbnd, bstates%file_unit, (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
             endif
           else
-            becp%k = cmplx(0.d0, kind=DP)
-            if (MOD(ik-1, nproc_pool) == me_pool) then
-              becp%k = bstates%host_ar((ik+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)%dat ! memory leak
+            if (MOD(ik-1, npot) == my_pot_id) then
+              becp%k = bstates%host_ar((ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)%dat ! memory leak
             endif
           endif
-          call mp_sum(becp%k, intra_pool_comm)
+          call mp_sum(becp%k, inter_pot_comm)
           
           ! make the product d <beta|psi>/dR = <(d beta)/dR|psi>
           do ipol = 1, 3
@@ -308,16 +311,19 @@ SUBROUTINE force_us_srb( forcenl )
                      tmp_mat%dat, scb%length, zero, &
                      dbecp(:,:,ipol), nkb)
           enddo
-          DO ibnd = 1, nbnd
+          DO ibnd = 1, nbnd 
+             ibnd_g = indxl2g(ibnd, &
+                              states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
+                              states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
              ! scale the D and S matrices by the energy
              IF (noncolin) THEN
-                CALL compute_deff_nc(deff_nc,et(ibnd,ik))
+                CALL compute_deff_nc(deff_nc,et(ibnd_g,ik))
              ELSE
                 current_spin = s
-                CALL compute_deff(deff,ets(ibnd,ik+(s-1)*qpoints%nred) )
+                CALL compute_deff(deff,ets(ibnd_g,ik+(s-1)*qpoints%nred) )
              ENDIF
              ! grab the right weight
-             fac=wgq(ibnd,ik+(s-1)*qpoints%nred)*tpiba
+             fac=wgq(ibnd_g,ik+(s-1)*qpoints%nred)*tpiba
              ! from here, it is a literal copy of force_us.f90
              ijkb0 = 0
              DO nt = 1, ntyp
@@ -398,7 +404,7 @@ SUBROUTINE force_us_srb( forcenl )
         end do !spin
        END DO ! nks
        !
-       CALL mp_sum(  forcenl , intra_bgrp_comm )
+       CALL mp_sum(  forcenl , intra_pot_comm )
        !
        DEALLOCATE( vkb )
        DEALLOCATE( vkb1 )
