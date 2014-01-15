@@ -38,9 +38,9 @@
   use srb_types, only : basis, ham_expansion, pseudop, kproblem
   use srb, only : build_basis, build_h_coeff, build_h_matrix, diagonalize
   use srb, only : build_projs_reduced, load_projs, build_s_matrix
-  use srb_matrix, only : setup_dmat, dmat, pot_scope, copy_dmat
+  use srb_matrix, only : setup_dmat, dmat, pot_scope, copy_dmat, pot_scope
   use mp, only : mp_sum
-  use mp_global, only : intra_pool_comm, me_pool, nproc_pool
+  use mp_global, only : intra_pool_comm, me_pool, nproc_pool, nproc_pot, inter_pot_comm
   use scalapack_mod, only : scalapack_distrib
 
   !
@@ -91,9 +91,9 @@
   ! set up the blacs descriptors
   if (.not. allocated(h_coeff%con)) allocate(h_coeff%con(nspin))
   do s = 1,nspin
-    call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length)
+    call setup_dmat(h_coeff%con(s), red_basis%length, red_basis%length, scope_in = pot_scope)
   enddo
-  call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length)
+  call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length, scope_in = pot_scope)
 
   call start_clock( ' build_h_coeff' )
   write(*,*) "making coeffs"
@@ -102,9 +102,9 @@
   call stop_clock(' build_h_coeff')
 
   ! Diagonalize the Hamiltonian, producing states
-  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length,min(16,nbnd),pot_scope)
+  call setup_dmat(evecs, red_basis%length, nbnd, red_basis%length,min(16,nbnd/nproc_pot),pot_scope)
   allocate(energies(red_basis%length, nspin*qpoints%nred))
-  call setup_dmat(Hk%H, red_basis%length, red_basis%length)
+  call setup_dmat(Hk%H, red_basis%length, red_basis%length, scope_in = pot_scope)
   if (okvan) then
     call copy_dmat(Hk%S, Hk%H)
     allocate(S_matrix2(size(Hk%S%dat, 1), size(Hk%S%dat,2)))
@@ -145,7 +145,7 @@
       CALL stop_clock( ' diagonalize' )
     enddo spin
   enddo
-  call mp_sum(energies, intra_pool_comm)
+  call mp_sum(energies, inter_pot_comm)
   deallocate(h_coeff%lin, S_matrix2)
   !
   WRITE( stdout, 9000 ) get_clock( 'PWSCF' )

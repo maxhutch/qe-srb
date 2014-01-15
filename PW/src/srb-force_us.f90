@@ -270,7 +270,7 @@ SUBROUTINE force_us_srb( forcenl )
                         vkb1, npw, zero, &
                         dprojs(:,:,ipol), scb%length)
           END DO
-          call mp_sum(dprojs, intra_pot_comm)
+          call mp_sum(dprojs, intra_pool_comm)
         do s = 1, nspin
           ! grab the states <B|psi>
           call copy_dmat(tmp_mat, states%host_ar(1))
