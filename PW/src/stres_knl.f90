@@ -134,7 +134,7 @@ subroutine stres_knl (sigmanlc, sigmakin)
      !
      !  contribution from the  nonlocal part
      !
-     CALL allocate_bec_type ( nkb, nbnd_l, becp, intra_bgrp_comm )
+     CALL allocate_bec_type ( nkb, nbnd, becp, intra_bgrp_comm )
      if (okvan) then
      call copy_dmat(tmp_mat, bstates%host_ar(1))
      if (size(bstates%host_ar) == 1) then
@@ -150,8 +150,17 @@ subroutine stres_knl (sigmanlc, sigmakin)
          tmp_mat%dat = cmplx(0.d0, kind=DP)
        endif
      endif
-     call mp_sum(tmp_mat%dat, inter_pot_comm)
-     becp%k = tmp_mat%dat
+     !call mp_sum(tmp_mat%dat, inter_pot_comm)
+     call setup_dmat(serial_mat, nkb, tmp_mat%desc(4), scope_in = serial_scope)
+     if (MOD(ik-1,npot) == my_pot_id) then
+       if (me_pot /= 0) serial_mat%desc(2) = -1
+       call pzgemr2d(nkb, tmp_mat%desc(4), &
+                     tmp_mat%dat, 1, 1, tmp_mat%desc, &
+                     serial_mat%dat, 1, 1, serial_mat%desc, &
+                     tmp_mat%desc(2))
+     endif
+     call mp_sum(serial_mat%dat, intra_pool_comm)
+     becp%k = serial_mat%dat
      endif 
      call stress_us_srb (ik+(s-1)*qpoints%nred, gk, sigmanlc)
      CALL deallocate_bec_type ( becp )

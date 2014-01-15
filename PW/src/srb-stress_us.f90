@@ -316,7 +316,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        !
        use srb, only : qpoints, states, bstates, wgq, scb, ets
        use cell_base, only : bg
-       use mp_global, only : root_pot, my_pot_id
+       use mp_global, only : root_pot, my_pot_id, me_image
        IMPLICIT NONE
        !
        ! ... local variables
@@ -331,7 +331,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        REAL(DP), ALLOCATABLE :: deff(:,:,:)
        ! dvkb contains the derivatives of the kb potential
        COMPLEX(DP)              :: ps, ps_nc(2)
-       integer :: nbnd, ibnd_g
+       integer :: nbnd
        integer, external :: indxl2g
        ! xyz are the three unit vectors in the x,y,z directions
        DATA xyz / 1.0d0, 0.0d0, 0.0d0, 0.0d0, 1.0d0, 0.0d0, 0.0d0, 0.0d0, 1.0d0 /
@@ -342,7 +342,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        current_spin = (ik_-1)/qpoints%nred + 1
        ik = ik_ - (current_spin-1)*qpoints%nred
        npw = size(scb%elements, 1)
-       nbnd = size(states%host_ar(1)%dat,2)
+       nbnd = size(becp%k,2)
        if (noncolin) then
           ALLOCATE( work2_nc(npwx,npol) )
           ALLOCATE( deff_nc(nhm,nhm,nat,nspin) )
@@ -364,21 +364,18 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        evps = 0.D0
        ! ... diagonal contribution
        !
-       IF ( my_pot_id /= root_pot ) GO TO 100
+       IF ( me_image /= 0 ) GO TO 100
        !
        ! ... the contribution is calculated only on one processor because
        ! ... partial results are later summed over all processors
        !
        DO ibnd = 1, nbnd
-           ibnd_g = indxl2g(ibnd, &
-                            states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
-                            states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
-          fac = wgq(ibnd_g,ik_)
+          fac = wgq(ibnd,ik_)
           IF (ABS(fac) < 1.d-9) CYCLE
           IF (noncolin) THEN
-             CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
+             CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
           ELSE
-             CALL compute_deff(deff,ets(ibnd_g,ik_))
+             CALL compute_deff(deff,ets(ibnd,ik_))
           ENDIF
           ijkb0 = 0
           DO np = 1, ntyp
@@ -386,19 +383,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                 IF ( ityp(na) == np ) THEN
                    DO ih = 1, nh(np)
                       ikb = ijkb0 + ih
-                      IF (noncolin) THEN
-                         ijs=0
-                         DO is=1,npol
-                            DO js=1,npol
-                               ijs=ijs+1
-                               evps=evps+fac*deff_nc(ih,ih,na,ijs)*   &
-                                         CONJG(becp%nc(ikb,is,ibnd))* &
-                                               becp%nc(ikb,js,ibnd)
-                            END DO
-                         END DO
-                      ELSE
                          evps = evps+fac*deff(ih,ih,na)*ABS(becp%k(ikb,ibnd) )**2
-                      END IF
                       !
                       IF ( upf(np)%tvanp .OR. newpseudo(np) ) THEN
                          !
@@ -409,22 +394,9 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                          !
                          DO jh = ( ih + 1 ), nh(np)
                             jkb = ijkb0 + jh
-                            IF (noncolin) THEN
-                               ijs=0
-                               DO is=1,npol
-                                  DO js=1,npol
-                                     ijs=ijs+1
-                                     evps = evps+2.d0*fac&
-                                            *DBLE(deff_nc(ih,jh,na,ijs)*      &
-                                            (CONJG( becp%nc(ikb,is,ibnd) ) * &
-                                                    becp%nc(jkb,js,ibnd))  )
-                                  END DO
-                               END DO
-                            ELSE
                                evps = evps + deff(ih,jh,na) * fac * 2.D0 * &
                                      DBLE( CONJG( becp%k(ikb,ibnd) ) * &
                                                   becp%k(jkb,ibnd) )
-                            END IF
                          END DO
                       END IF
                    END DO
@@ -446,16 +418,12 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        CALL gen_us_dj(npw, igk, matmul( bg, qpoints%xr(:,ik) - floor(qpoints%xr(:,ik))), dvkb )
        !
        DO ibnd = 1, nbnd
-         ibnd_g = indxl2g(ibnd, &
-                          states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
-                          states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
-
           IF (noncolin) THEN
              work2_nc = (0.D0,0.D0)
-             CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
+             CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
           ELSE
              work2 = (0.D0,0.D0)
-             CALL compute_deff(deff,ets(ibnd_g,ik_))
+             CALL compute_deff(deff,ets(ibnd,ik_))
           ENDIF
           ijkb0 = 0
           DO np = 1, ntyp
@@ -464,20 +432,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                    DO ih = 1, nh(np)
                       ikb = ijkb0 + ih
                       IF ( .NOT. ( upf(np)%tvanp .OR. newpseudo(np) ) ) THEN
-                         IF (noncolin) THEN
-                            if (lspinorb) call errore('stres_us','wrong case',1)
-                            ijs=0
-                            ps_nc=(0.D0, 0.D0)
-                            DO is=1,npol
-                               DO js=1,npol
-                                  ijs=ijs+1
-                                  ps_nc(is)=ps_nc(is)+becp%nc(ikb,js,ibnd)* &
-                                         deff_nc(ih,ih,na,ijs)
-                               END DO
-                            END DO
-                         ELSE
                             ps = becp%k(ikb, ibnd) * deeq(ih,ih,na,current_spin)
-                         ENDIF
                       ELSE
                          !
                          ! ... in the US case there is a contribution 
@@ -487,28 +442,10 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                          ps_nc = (0.D0,0.D0)
                          DO jh = 1, nh(np)
                             jkb = ijkb0 + jh
-                            IF (noncolin) THEN
-                               ijs=0
-                               DO is=1,npol
-                                  DO js=1,npol
-                                     ijs=ijs+1
-                                     ps_nc(is)=ps_nc(is)+becp%nc(jkb,js,ibnd)* &
-                                           deff_nc(ih,jh,na,ijs)
-                                  END DO
-                               END DO
-                            ELSE
                                ps = ps + becp%k(jkb,ibnd) * deff(ih,jh,na)
-                            END IF
                          END DO
                       END IF
-                      IF (noncolin) THEN
-                         DO is=1,npol
-                            CALL zaxpy(npw,ps_nc(is),dvkb(1,ikb),1,&
-                                                      work2_nc(1,is),1)
-                         END DO
-                      ELSE
                          CALL zaxpy( npw, ps, dvkb(1,ikb), 1, work2, 1 )
-                      END IF
                    END DO
                    ijkb0 = ijkb0 + nh(np)
                 END IF
@@ -516,25 +453,12 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
           END DO
           DO ipol = 1, 3
              DO jpol = 1, ipol
-                IF (noncolin) THEN
                    DO i = 1, npw
-                      work1(i) = evc(i     ,ibnd)*gk(ipol,i)* &
-                                                  gk(jpol,i)*qm1(i)
-                      work2(i) = evc(i+npwx,ibnd)*gk(ipol,i)* &
-                                                  gk(jpol,i)*qm1(i)
+                      work1(i) = evc(i,ibnd)*gk(ipol,i)*gk(jpol,i)*qm1(i)
                    END DO
                    sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                                   2.D0 * wgq(ibnd,ik_) * &
-                                 ( ddot(2*npw,work1,1,work2_nc(1,1), 1) + &
-                                   ddot(2*npw,work2,1,work2_nc(1,2), 1) )
-                ELSE
-                   DO i = 1, npw
-                      work1(i) = evc(i,ibnd_g)*gk(ipol,i)*gk(jpol,i)*qm1(i)
-                   END DO
-                   sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                                      2.D0 * wgq(ibnd_g,ik_) * &
+                                      2.D0 * wgq(ibnd,ik_) * &
                                       ddot( 2 * npw, work1, 1, work2, 1 )
-                END IF
              END DO
           END DO
        END DO
@@ -547,15 +471,12 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        DO ipol = 1, 3
           CALL gen_us_dy(npw, igk, matmul( bg, qpoints%xr(:,ik) - floor(qpoints%xr(:,ik))), xyz(1,ipol), dvkb )
           DO ibnd = 1, nbnd
-            ibnd_g = indxl2g(ibnd, &
-                          states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
-                          states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
              IF (noncolin) THEN
                 work2_nc = (0.D0,0.D0)
-                CALL compute_deff_nc(deff_nc,ets(ibnd_g,ik_))
+                CALL compute_deff_nc(deff_nc,ets(ibnd,ik_))
              ELSE
                 work2 = (0.D0,0.D0)
-                CALL compute_deff(deff,ets(ibnd_g,ik_))
+                CALL compute_deff(deff,ets(ibnd,ik_))
              ENDIF
 
              ijkb0 = 0
@@ -565,19 +486,7 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                       DO ih = 1, nh(np)
                          ikb = ijkb0 + ih
                          IF ( .NOT. ( upf(np)%tvanp .OR. newpseudo(np) ) ) THEN
-                            IF (noncolin) THEN
-                               ijs=0
-                               ps_nc = (0.D0,0.D0)
-                               DO is=1,npol
-                                  DO js=1,npol
-                                     ijs=ijs+1
-                                     ps_nc(is)=ps_nc(is)+becp%nc(ikb,js,ibnd)* &
-                                         deff_nc(ih,ih,na,ijs)
-                                  END DO
-                               END DO
-                            ELSE
                                ps = becp%k(ikb,ibnd) * deeq(ih,ih,na,current_spin)
-                            END IF
                          ELSE
                             !
                             ! ... in the US case there is a contribution 
@@ -587,52 +496,22 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
                             ps_nc = (0.D0,0.D0)
                             DO jh = 1, nh(np)
                                jkb = ijkb0 + jh
-                               IF (noncolin) THEN
-                                  ijs=0
-                                  DO is=1,npol
-                                     DO js=1,npol
-                                        ijs=ijs+1
-                                        ps_nc(is)=ps_nc(is)+ &
-                                               becp%nc(jkb,js,ibnd)* &
-                                               deff_nc(ih,jh,na,ijs)
-                                     END DO
-                                  END DO
-                               ELSE
                                   ps = ps + becp%k(jkb,ibnd) * deff(ih,jh,na)
-                               END IF
                             END DO
                          END IF
-                         IF (noncolin) THEN
-                            DO is=1,npol
-                               CALL zaxpy(npw,ps_nc(is),dvkb(1,ikb),1, &
-                                          work2_nc(1,is),1)
-                            END DO
-                         ELSE
                             CALL zaxpy( npw, ps, dvkb(1,ikb), 1, work2, 1 )
-                         END IF
                       END DO
                       ijkb0 = ijkb0 + nh(np)
                    END IF
                 END DO
              END DO
              DO jpol = 1, ipol
-                IF (noncolin) THEN
                    DO i = 1, npw
-                      work1(i) = evc(i     ,ibnd) * gk(jpol,i)
-                      work2(i) = evc(i+npwx,ibnd) * gk(jpol,i)
+                      work1(i) = evc(i,ibnd) * gk(jpol,i)
                    END DO
                    sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                              2.D0 * wgq(ibnd,ik_) * & 
-                            ( ddot( 2 * npw, work1, 1, work2_nc(1,1), 1 ) + &
-                              ddot( 2 * npw, work2, 1, work2_nc(1,2), 1 ) )
-                ELSE
-                   DO i = 1, npw
-                      work1(i) = evc(i,ibnd_g) * gk(jpol,i)
-                   END DO
-                   sigmanlc(ipol,jpol) = sigmanlc(ipol,jpol) - &
-                                      2.D0 * wgq(ibnd_g,ik_) * & 
+                                      2.D0 * wgq(ibnd,ik_) * & 
                                       ddot( 2 * npw, work1, 1, work2, 1 )
-               END IF
              END DO
           END DO
        END DO
