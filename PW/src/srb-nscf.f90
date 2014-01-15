@@ -40,7 +40,8 @@
   use srb, only : build_projs_reduced, load_projs, build_s_matrix
   use srb_matrix, only : setup_dmat, dmat, pot_scope, copy_dmat, pot_scope
   use mp, only : mp_sum
-  use mp_global, only : intra_pool_comm, me_pool, nproc_pool, nproc_pot, inter_pot_comm
+  use mp_global, only : intra_pool_comm, me_pool, nproc_pool
+  use mp_global, only : my_pot_id, npot, nproc_pot, inter_pot_comm
   use scalapack_mod, only : scalapack_distrib
 
   !
@@ -119,12 +120,12 @@
   endif
 
   energies = 0. 
-  do q = 1+me_pool, qpoints%nred, nproc_pool
+  do q = 1+my_pot_id, qpoints%nred, npot
     if (nkb > 0) call load_projs(q, projs)
 
     if (okvan) then
       call start_clock(' build_proj')
-      call build_s_matrix(projs, (1-q)/nproc_pool - 1, Hk)
+      call build_s_matrix(projs, (1-q)/npot - 1, Hk)
       call stop_clock(' build_proj')
     end if
     spin: do s = 1, nspin
