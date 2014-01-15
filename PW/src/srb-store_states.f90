@@ -64,9 +64,9 @@ subroutine store_states(wfc, pp, k, states, betawfc)
   endif
 
   ! produce <\beta|\psi>
-  call print_dmat(pp%projs(1))
-  call print_dmat(wfc)
-  call print_dmat(betawfc%host_ar(ptr))
+!  call print_dmat(pp%projs(1))
+!  call print_dmat(wfc)
+!  call print_dmat(betawfc%host_ar(ptr))
   do t = 1, size(pp%na)
     call pZGEMM('C', 'N', pp%na(t)*nh(t), states%host_ar(1)%desc(4), nbasis, &
                one,  pp%projs(t)%dat, 1, 1, pp%projs(t)%desc, &

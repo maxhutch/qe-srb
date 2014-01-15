@@ -75,7 +75,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     pp%nkb_l = 0
     do t = 1, ntyp    
       call setup_dmat(pp%projs(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t), pot_scope)
-      call print_dmat(pp%projs(t))
+!      call print_dmat(pp%projs(t))
       pp%nkb_l = pp%nkb_l + size(pp%projs(t)%dat,2) 
       pp%p_unit(t) = 3000+t
       write(fname, '(A6,I4)') "projs_", t

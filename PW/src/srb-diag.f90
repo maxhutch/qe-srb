@@ -107,7 +107,7 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
                    ifail, iclustr, gap, ierr)
       if (ierr /= 0) write(*,*) "zhegvx error: ", ierr
       call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc(2))
-      write(*,*) "Worked once?"
+!      write(*,*) "Worked once?"
       deallocate(z)
       deallocate(work, rwork, iwork)
       deallocate(ifail, iclustr, gap)
