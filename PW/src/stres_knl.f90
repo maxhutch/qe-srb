@@ -190,6 +190,7 @@ subroutine stres_knl (sigmanlc, sigmakin)
      !
      !   kinetic contribution
      !
+     nbnd = size(evc,2)
      do l = 1, 3
         do m = 1, l
            do ibnd = 1, nbnd
