@@ -134,7 +134,11 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   do k=1,nks_orig
     do i=1,xk_map(k)%nmap
       j = j + 1
-      xk(:,j) = matmul( bg, xk_map(k)%xmap(:,i) ) + xk_orig(:,k)
+      if (xk_map(k)%invert(i)) then 
+        xk(:,j) = matmul( bg, xk_map(k)%xmap(:,i) ) - xk_orig(:,k)
+      else
+        xk(:,j) = matmul( bg, xk_map(k)%xmap(:,i) ) + xk_orig(:,k)
+      endif
       wk(j) = 0.d0 ! I'm zeroing this just in case
     enddo
   enddo
@@ -176,7 +180,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
       j = j + 1 ! global kpoint index
 
       ! is this a trivial phase?
-      trivial = .not. any(abs(xk_map(k)%xmap(:,i)) > 0.00000001)
+      trivial = .not. (any(abs(xk_map(k)%xmap(:,i)) > 0.00000001) .or. xk_map(k)%invert(i))
 
       ! make the phase
       ! e^(-i 2 pi xk_map.r ) - r and xk in crystal units
@@ -214,7 +218,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
         ! apply the phase shift in real space
         if (.not. trivial ) then
           ! if evc is on a single proc, just shuffle
-          if (nproc_pool == 1) then
+          if ((.not. xk_map(k)%invert(i)) .and.  nproc_pool == 1) then
             if (shuffle(1, j) == -1) then
               psic = cmplx(0.d0, kind=DP)
               forall (i=1:npw_tmp) psic(nls(igk_tmp(i))) = i
@@ -231,6 +235,9 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
             psic = cmplx(0.d0, kind=DP)
             psic(nls(igk_tmp(1:npw_tmp))) = evc_all(1:npw_tmp, iband, j)
             call invfft('Wave', psic, dffts_int)
+            ! flip
+            if (xk_map(k)%invert(i)) psic(1:dffts_int%nnr) = conjg(psic(1:dffts_int%nnr))  
+            ! translate
             psic(1:dffts_int%nnr) = psic(1:dffts_int%nnr) * expikr(1:dffts_int%nnr) ! actual application
             call fwfft('Wave', psic, dffts_int)
             evc_all(1:npw_tmp, iband, j) = psic(nls(igk_tmp(1:npw_tmp)))
@@ -264,60 +271,13 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   deallocate(xr, expikr)
 
   call stop_clock('  mirrors')
-
-#if USE_SVD
-
-  call start_clock('  SVD')
-  !=====================
-  ! constuct the overlap matrix
-  nbasis = nbnd * nks ! global array size
-  call scalapack_distrib(npwx_tmp, nbasis, nbasis_lr, nbasis_lc) ! find local array sizes
-  allocate(B_l(nbasis_lr, nbasis_lc), eigU(nbasis))
-  eigU = 0.d0
-  call scalapack_svd(npwx_tmp, nbasis, evc_all, eigU, B_l)
-  deallocate(evc_all)
-
-
-  !============================
-  ! Truncate it
-  if (max_basis_size < 0) max_basis_size = HUGE(max_basis_size)
-#if 0
-  if (trace_tol < 0) then
-    trace_tol = 1.d0
-  endif
-  trace_tol = trace_tol * .1d0
-#endif
-  if (trace_tol <= 1.d-16) then
-    nbasis_trunc = min(nbasis, max_basis_size)
-  else
-    trace = sum(eigU)
-    ptrace = 0.d0; nbasis_trunc = 0
-    do while ((abs(ptrace) < abs((1.d0 - trace_tol)*trace)) .and. (nbasis_trunc < min(nbasis, max_basis_size)))
-      ptrace = ptrace + eigU(nbasis - nbasis_trunc)
-      nbasis_trunc = nbasis_trunc + 1
-    enddo
-  endif
-
-  deallocate(eigU)
-
-  allocate(opt_basis%elements(ngk_gamma, nbasis_trunc)); opt_basis%length = nbasis_trunc
-  forall(i = 1:nbasis_trunc) opt_basis%elements(:,i) = B_l(:,i)
-
-  deallocate(B_l)
-  call stop_clock('  SVD')
-#else
-
   call start_clock('  make_S')
   !=====================
   ! constuct the overlap matrix
   nbasis = nbnd * nks ! global array size
   call setup_dmat(S, nbasis, nbasis, scope_in = pool_scope)
   call setup_dmat(B, nbasis, nbasis, scope_in = pool_scope)
-!  call print_dmat(S)
-!  call print_dmat(B)
   allocate(eigU(nbasis))
-!  S_l = 0.d0; B_l = 0.d0; eigU = 0.d0 
-  eigU = 0.d0 
 
   call block_inner(nbnd*nks, ngk_gamma, &
                    one,  evc_all, npwx_tmp, &
@@ -330,7 +290,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   ! diagonalize it
   call start_clock('  diag_S')
   call diag(S, eigU, B)
-!  call scalapack_diag( nbasis, S%dat, eigU, B_l )
   call stop_clock('  diag_S')
   !============================
   ! Truncate it
@@ -359,14 +318,12 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   endif
   if (me_pool == 0) then
     write(*,'(A,I7,A,I7,A,F10.6,A)') " Made basis: ", nbasis_trunc, " of ", nks*nbnd, " elements (", abs(ptrace)*100, "% error)"
-!    write(*,*) eigU(nbasis:nbasis-nbnd:-1)/sum(abs(eigU))
   endif
   !=============================
   ! Express the basis in the gamma-point pw basis <G|B>
   call start_clock('  expand')
   allocate(opt_basis%elements(ngk_gamma, nbasis_trunc)); opt_basis%length = nbasis_trunc
 
-#if 1
   call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
   if (me_pool == 0) then
   call pzgemr2d(nbasis, nbasis_trunc, &
@@ -387,40 +344,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
              Z%dat, nbasis, zero, &
              opt_basis%elements, ngk_gamma)
 
-#else
-  ! expand the full <psi|B>
-  allocate(ztmp(nbasis, nbasis_trunc))
-  ztmp = cmplx(0.d0, kind=DP)
-  do j = 1, nbasis_trunc
-    do i = 1, nbasis
-      call scalapack_localindex(i, nbasis - j + 1, i_l, j_l, islocal)
-      if (islocal) ztmp(i, j) = B_l(i_l, j_l)
-    enddo
-  enddo
-  call mp_sum(ztmp, intra_pool_comm) !THIS IS SO HORRIBLE!!!
 
-  if (srb_debug) then
-  if (me_pool == 0) then
-  do i = 1, nbasis_trunc
-    do j = 1, nbasis_trunc
-      lprod = dot_product(ztmp(:,i), ztmp(:,j))
-      if (me_pool == 0 .and. i == j .and. abs(lprod - 1.d0) > .001) write(*,*) "WARN: |B> not orthonormal", i, j, lprod
-      if (me_pool == 0 .and. i /= j .and. abs(lprod) > 0.001) write(*,*) "WARN: |B> not orthonormal", i, j, lprod
-    enddo
-  enddo
-  endif
-  endif
-
-    ! transform <G|psi><psi|B>
-  call ZGEMM('N', 'N', ngk_gamma, nbasis_trunc, nbasis, one, & 
-             evc_all, npwx_tmp, &
-             ztmp, nbasis, zero, &
-             opt_basis%elements, ngk_gamma)
-
-  deallocate(S_l)
-  deallocate(B_l)
-  deallocate(ztmp)
-#endif
   deallocate(eigU)
   deallocate(evc_all)
 
@@ -433,8 +357,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
     call zdscal(ngk_gamma, inv_norm, opt_basis%elements(:,i), 1)
   enddo
   call stop_clock('  expand')
-
-#endif
 
   ! prepare to write to file
 #ifdef FIO
@@ -502,9 +424,12 @@ subroutine kpoint_expand(ndim_in, xk, at, xk_map )
 
   real(dp),parameter :: eps=1.d-12
   real(dp), allocatable :: xk_latt(:,:)
+  real(dp) :: xk_tmp(3)
+  real(dp) :: disp
   integer :: ndim(3), nmin(3) = (/0,0,0/)
-  integer :: izero(3), kg, jg, ig, ik
+  integer :: izero(3), kg, jg, ig, ik, flip, counter
   integer :: nkstot
+  real(dp), allocatable :: xk_all(:,:)
 
   ! now pad the BZ with edges
   ! and collect the final number of mapped kpoints
@@ -516,6 +441,8 @@ subroutine kpoint_expand(ndim_in, xk, at, xk_map )
 
   nkstot = size(xk, 2) 
   allocate(xk_latt(3, nkstot))
+  allocate(xk_all(3,10000))
+  xk_all(:,:) = -10000000
 
   ! transform kpoint indicies to reciprical lattice coordinates
   do ik=1,nkstot
@@ -532,50 +459,64 @@ subroutine kpoint_expand(ndim_in, xk, at, xk_map )
   allocate( xk_map(nkstot) )
   xk_map(:)%nmap = 0
 
-  ! count the symmetries
-  do ik=1,nkstot
-    xk_map(ik)%nmap = xk_map(ik)%nmap + 1
-
-    izero=0
-!    izero = minval(izero)
+    ! count translations
+    do flip = 1,-1,-2
     do kg=nmin(3),ndim(3)
-    do jg=nmin(2),ndim(2)
-    do ig=nmin(1),ndim(1)
-      if( ig==0 .and. jg==0 .and. kg==0 ) cycle
-      if ((any(xk_latt(:,ik) + (/ ig, jg, kg /) > ndim + 0.01)) &
-          .or. (any(xk_latt(:,ik) + (/ ig, jg, kg /) < nmin - 0.01))) cycle
-      xk_map(ik)%nmap = xk_map(ik)%nmap + 1
-    enddo
-    enddo
-    enddo
+      do jg=nmin(2),ndim(2)
+        do ig=nmin(1),ndim(1)
+  do ik=1,nkstot
+          xk_tmp = xk_latt(:,ik) * flip + (/ig, jg, kg/)
+          if ((any(xk_tmp > ndim + 0.01)) &
+             .or. (any(xk_tmp  < nmin - 0.01))) cycle
+          counter = 1
+          do while (all(xk_all(:,counter) > xk_all(:,10000)))
+            if (all(abs(xk_tmp - xk_all(:,counter)) < eps)) exit
+            counter = counter + 1
+          enddo
+          if (all(abs(xk_all(:,counter)  - xk_all(:,10000)) < eps)) then
+            xk_all(:,counter) = xk_tmp
+            xk_map(ik)%nmap = xk_map(ik)%nmap + 1
+          endif 
   enddo
+        enddo
+      enddo
+    enddo
+    enddo
 
   ! allocate a map for each symmetry
   do ik=1,nkstot
     allocate( xk_map(ik)%xmap( 3, xk_map(ik)%nmap ) )
+    allocate( xk_map(ik)%invert( xk_map(ik)%nmap ) )
   enddo
 
   ! store displacements
   xk_map(:)%nmap = 0
-  do ik=1,nkstot
-    xk_map(ik)%nmap = xk_map(ik)%nmap + 1
-    xk_map(ik)%xmap(:,xk_map(ik)%nmap) = 0.d0
-
-    izero=0
-    where( abs(xk_latt(:,ik)) < eps ) izero=ndim
-!    izero = minval(izero)
+  xk_all(:,:) = -10000000
+    do flip = 1,-1,-2
     do kg=nmin(3),ndim(3)
-    do jg=nmin(2),ndim(2)
-    do ig=nmin(1),ndim(1)
-      if( ig==0 .and. jg==0 .and. kg==0 ) cycle
-      if ((any(xk_latt(:,ik) + (/ ig, jg, kg /) > ndim + 0.01)) &
-          .or. (any(xk_latt(:,ik) + (/ ig, jg, kg /) < nmin - 0.01))) cycle
-      xk_map(ik)%nmap = xk_map(ik)%nmap + 1
-      xk_map(ik)%xmap(:,xk_map(ik)%nmap) = (/ ig, jg, kg /)
-    enddo
-    enddo
-    enddo
+      do jg=nmin(2),ndim(2)
+        do ig=nmin(1),ndim(1)
+  do ik=1,nkstot
+          xk_tmp = xk_latt(:,ik) * flip + (/ig, jg, kg/)
+          if ((any(xk_tmp > ndim + 0.01)) &
+             .or. (any(xk_tmp  < nmin - 0.01))) cycle
+          counter = 1
+          do while (all(xk_all(:,counter) > xk_all(:,10000)))
+            if (all(abs(xk_tmp - xk_all(:,counter)) < eps)) exit
+            counter = counter + 1
+          enddo
+          if (all(abs(xk_all(:,counter)  - xk_all(:,10000)) < eps)) then
+            xk_all(:,counter) = xk_tmp
+            xk_map(ik)%nmap = xk_map(ik)%nmap + 1
+            xk_map(ik)%xmap(:,xk_map(ik)%nmap) = (/ ig, jg, kg /)
+            xk_map(ik)%invert(xk_map(ik)%nmap) = (flip == -1)
+!            write(*,'(A,3F,A,3F)') "Mirror ", xk_latt(:,ik), " to ", xk_tmp
+          endif 
   enddo
+        enddo
+      enddo
+    enddo
+    enddo
 
 end subroutine kpoint_expand
 
