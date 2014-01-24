@@ -9,17 +9,7 @@ module srb_matrix
     integer :: npcol
     integer :: scope
   end type dmat
-#if 0
-  type mydesc
-    integer :: desc(9)
-    integer :: myrow
-    integer :: mycol
-    integer :: nprow
-    integer :: npcol
-    integer :: nrl
-    integer :: ncl
-  end type mydesc
-#endif
+
   integer, parameter :: nscope = 3
 
   integer :: serial_scope = 1
@@ -37,18 +27,6 @@ module srb_matrix
   integer, external :: numroc
 
   contains
-#if 0
-  subroutine print_desc(desc)
-    implicit none
-    type(mydesc), intent(in) :: desc
-    write(*,'(A,4(I2,A),6(I6,A),I3)') "desc: (",desc%myrow,",",desc%mycol,") in (", &
-                                           desc%nprow,",",desc%npcol,") has [", &
-                                           desc%nrl,",",desc%ncl,"] of [", &
-                                           desc%desc(3),",",desc%desc(4),"] in [",&
-                                           desc%desc(5),",",desc%desc(6),"] on ctx ",&
-                                           desc%desc(2)
-  end subroutine print_desc
-#endif
   subroutine print_dmat(A)
     implicit none
     type(dmat), intent(in) :: A
@@ -85,7 +63,6 @@ module srb_matrix
     ctx_r = comm_scope
     ctx_c = comm_scope
 
-    write(*,*) "nproc: ", nproc
     allocate(map(nproc(nscope), nproc(nscope)))
     ! create three contexts for each scope
     do i = 1, nscope
@@ -94,15 +71,11 @@ module srb_matrix
       do prow = 1, nproc(i)
         map(prow, 1) = first_proc(i) + prow - 1
       enddo
-      write(*,*) "ctx_r", map
-      !call blacs_get( -1, 0, ctx_r(i) )
       call blacs_gridmap( ctx_r(i), map, nproc(nscope), nproc(i), 1 )
       call mp_barrier(intra_pool_comm)
       do pcol = 1, nproc(i)
         map(1, pcol) = first_proc(i) + pcol - 1
       enddo
-      write(*,*) "ctx_c", map
-      !call blacs_get( -1, 0, ctx_c(i) )
       call blacs_gridmap( ctx_c(i), map, nproc(nscope), 1, nproc(i))
       call mp_barrier(intra_pool_comm)
 
@@ -118,15 +91,11 @@ module srb_matrix
           map(prow, pcol) = first_proc(i) + prow + (pcol - 1)*nprow(i) - 1
         enddo
       enddo
-      write(*,*) "ctx_s", map
       !call blacs_get( -1, 0, ctx_s(i) )
       call blacs_gridmap( ctx_s(i), map, nproc(nscope), nprow(i), npcol(i))
       call mp_barrier(intra_pool_comm)
-      write(*,'(A,I1,A,4I3)') "ctx_s(",i,"): ", ctx_s(i), nprow(i), npcol(i), my_pot_id
       call mp_barrier(intra_pool_comm)
-      write(*,'(A,I1,A,4I3)') "ctx_r(",i,"): ", ctx_r(i), nproc(i), 1, my_pot_id
       call mp_barrier(intra_pool_comm)
-      write(*,'(A,I1,A,4I3)') "ctx_c(",i,"): ", ctx_c(i), 1, nproc(i), my_pot_id
       call mp_barrier(intra_pool_comm)
     enddo
 
@@ -205,56 +174,7 @@ module srb_matrix
     if (allocated(A%dat)) deallocate(A%dat)
     allocate(A%dat(nrl, ncl)); A%dat = 0.d0
   end subroutine copy_dmat
-#if 0
-  subroutine setup_desc(desc, nr, nc, blockr_in, blockc_in)
-    use scalapack_mod, only : myrow_sq, mycol_sq, nprow, npcol
-    use scalapack_mod, only :  ctx_sq, ctx_rex, ctx_rey
-    use scalapack_mod, only : myrow_rex, mycol_rex, myrow_rey, mycol_rey
-    use scalapack_mod, only : scalapack_blocksize
-    use mp_global, only : nproc_pot, me_pot
-    implicit none
-    type(mydesc), intent(inout) :: desc
-    integer, intent(in) :: nr, nc
-    integer, optional, intent(in) ::  blockr_in, blockc_in
 
-    integer, external :: numroc
-    integer :: blockr, blockc
-    integer :: ctx, info
-
-    if (.not. present(blockr_in) .or. .not. present(blockc_in)) then
-      call scalapack_blocksize( blockr, 32, nr, nc, nprow, npcol )
-      blockc = blockr
-    else
-      blockc = blockc_in; blockr = blockr_in
-    endif
-    
-    if (blockr == nr) then
-      desc%nprow = 1
-      desc%npcol = nproc_pot
-      desc%myrow = 0
-      desc%mycol = mycol_rey
-      ctx = ctx_rey
-    else if (blockc == nc) then
-      desc%nprow = nproc_pot
-      desc%npcol = 1
-      desc%myrow = mycol_rex
-      desc%mycol = 0
-      ctx = ctx_rex
-    else
-      desc%nprow = nprow
-      desc%npcol = npcol
-      desc%myrow = myrow_sq
-      desc%mycol = mycol_sq
-      ctx = ctx_sq
-    endif
-    
-    desc%nrl = numroc( nr, blockr, desc%myrow, 0, desc%nprow )
-    desc%ncl = numroc( nc, blockc, desc%mycol, 0, desc%npcol )
-    !write(*,*) nr, nc, blockr, blockc, desc%nrl, desc%ncl
-    call descinit( desc%desc, nr, nc, blockr, blockc, 0, 0, ctx, max(1,desc%nrl), info )
-
-  end subroutine setup_desc
-#endif
 #define CHUNK 32
   subroutine block_inner(n, k, alpha, A, lda, B, ldb, beta, C, comm_in)
     use kinds, only : DP

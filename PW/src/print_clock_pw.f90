@@ -258,6 +258,7 @@ SUBROUTINE print_clock_pw()
       call print_clock( '  acc')
       call print_clock( '  addproj')
       call print_clock( '  transpose')
+      call print_clock( ' finish_rho' )
       call print_clock( ' other' )
    ENDIF
 #ifdef __ENVIRON

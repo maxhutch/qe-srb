@@ -10,12 +10,10 @@ subroutine load_projs(q, pp)
   type(pseudop), intent(inout) :: pp
   integer :: t
   
-  call start_clock('  proj_load')
   do t = 1, pp%ntyp
     if (size(pp%projs(t)%dat) > 0) &
       call get_buffer(pp%projs(t)%dat, size(pp%projs(t)%dat), pp%p_unit(t), (q-1)/npot+1)
   enddo
-  call stop_clock('  proj_load')
 
   return
 

@@ -75,7 +75,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       real(DP), intent(inout) :: foo(:,:)
     end subroutine addusdens_g
   end interface
-  integer,external :: numroc
   !
   ! ... local variables
   !
@@ -84,7 +83,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
   type(dmat) :: evecs !>!< eigenvectors of Hamiltonian
-  complex(DP), allocatable :: P(:,:,:), Pinv(:,:,:) !>!< Preconditioner and inverse
   type(dmat), allocatable :: rho_srb(:) !>!< Denstiy matrix in reduced basis
   real(DP), allocatable :: wr2(:), xr2(:,:) !>!< copies of k-points and weights
   ! parameters
@@ -220,11 +218,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     !
     ! ... Build dense S matrix 
     !
-    call start_clock(  ' other')
+    call start_clock( '  proj_load')
     if (nkb > 0) then
       call load_projs(q, pp)
     endif
-    call stop_clock(  ' other')
+    call stop_clock(  '  proj_load')
 
     if (okvan) then
       CALL start_clock(' build_mat' )
@@ -235,16 +233,8 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
       endif
       CALL stop_clock(' build_mat' )
     end if
-#ifdef DAVID
-    ! allocate space for preconditioner
-    if ((q-1)/nproc_pool == 0) then
-      allocate(P(red_basis%length,red_basis%length,nspin))
-      allocate(Pinv(red_basis%length,red_basis%length,nspin))
-      allocate(ipiv(red_basis%length), work(16*red_basis%length)) 
-    endif
-#endif
 
-    ! loop over spins (which share S matrices
+    ! loop over spins (which share S matrices)
     do s = 1, nspin
         !
         ! ... Build dense Hamiltonian matrix
@@ -257,42 +247,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         ! ... Diagonalize the dense Hamiltonian 
         !
         CALL start_clock( ' diagonalize' )
-#ifdef DAVID
-        ! invert preconditioner
-        if ((q-1)/nproc_pool == 1) then
-          P(:,:,s) = Hk%H 
-          Pinv(:,:,s) = P(:,:,s) 
-          call ZHETRF( 'U', red_basis%length, Pinv(:,:,s), red_basis%length, &
-                      ipiv, work, 16*red_basis%length, i )
-          call ZHETRI( 'U', red_basis%length, Pinv(:,:,s), opt_Basis%length, &
-                      ipiv, work, i )
-        endif
-
-        ! try to load old states as starting guesses
-        if (basis_age /= 0) then ! use last iteration's evecs
-          if (size(states%host_ar, 3) == 1) then
-            ptr => states%host_ar(:,:,1)
-            call get_buffer(ptr, red_basis%length*nbnd, states%file_unit, &
-                            (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
-          else
-            ptr => states%host_ar(:,:,(q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool + 1)
-          endif
-          evecs = ptr
-          meth = 2
-        else if (q /= 1+me_pool) then ! load the most recently computed q-point
-          if (size(states%host_ar, 3) == 1) then
-            ptr => states%host_ar(:,:,1)
-            call get_buffer(ptr, red_basis%length*nbnd, states%file_unit, &
-                            (q+(s-1)*(qpoints%nred+nproc_pool)-1)/nproc_pool)
-          else
-            ptr => states%host_ar(:,:,1)
-          endif
-          evecs = ptr
-          meth = 2
-        else ! fallback to exact diagonalization
-          meth = 0
-        endif
-#endif
         if (okvan) then
           S_matrix2(:,:) = Hk%S%dat
           Hk%generalized = .true.
@@ -316,13 +270,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   enddo 
   call start_clock(  ' other')
   call mp_sum(energies, inter_pot_comm)
-!  write(*,*) "energies: ", energies(1:5,4)
-  energies = energies 
   deallocate(S_matrix2)
-#ifdef DAVID
-  deallocate(P, Pinv)
-  deallocate(work, ipiv)
-#endif
   call stop_clock(  ' other')
   CALL start_clock( ' build_rho' )
 
@@ -372,7 +320,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     !call build_rho(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, red_basis, nspin, rho, becsum)
   endif
   CALL stop_clock( ' build_rho' )
-  call start_clock(  ' other')
+  call start_clock(  ' finish_rho')
 
   ! ... interpolate rho(r) if needed
   if (doublegrid) then
@@ -382,7 +330,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   endif
 
   ! ... add ultra-soft correction
-  if (okvan)  call addusdens_g(becsum, rho%of_r)
+  if (okvan) call addusdens_g(becsum, rho%of_r)
 
   ! ... symmetrize rho(G) 
   do s = 1, nspin
@@ -404,7 +352,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 !    call backload(qpoints, red_basis, states)
 !  endif
 
-  call stop_clock(  ' other')
+  call stop_clock(  ' finish_rho')
   call stop_clock('srb')
 
   return
