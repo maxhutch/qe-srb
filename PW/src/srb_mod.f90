@@ -67,6 +67,7 @@ module srb_types
   type kmap
     integer               :: nmap
     real(dp), allocatable :: xmap(:,:)
+    logical,  allocatable :: invert(:)
   end type kmap
 end module srb_types
 
