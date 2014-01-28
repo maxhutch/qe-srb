@@ -1,4 +1,4 @@
-#define THRESH 5 
+#define THRESH 65
 
 subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   USE kinds, ONLY : DP
@@ -82,6 +82,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       if (size(pp%projs(t)%dat) > 0) &
         call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
       old_basis_length = opt_basis%length
+      write(*,*) "old_basis_length ", old_basis_length
     enddo
     jkb = 1
     ! this makes assumptions about atom ordering by type
@@ -111,14 +112,15 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   allocate (ylm(npw, (lmaxkb + 1)**2), gk(3, npw), qg(npw), vq(npw))
 
   ! if we have a longer buffer - adjust size of file dynamically
-  if (opt_basis%length > old_basis_length .and. size(pp%projs(t)%dat) > 0) then
-    do t = 1, ntyp    
+  do t = 1, ntyp    
+    if (opt_basis%length > old_basis_length .and. size(pp%projs(t)%dat) > 0) then
+      write(*,*) "adjusting buffer"
       call close_buffer(pp%p_unit(t),'delete')
       write(fname, '(A6,I4)') "projs_", t
       call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
       old_basis_length = opt_basis%length
-    enddo
-  endif
+    endif
+  enddo
 
   ! if the auxillary basis isn't in file, make it
   if (pp%b_unit < 0) then 

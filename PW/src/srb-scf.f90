@@ -333,6 +333,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   if (okvan) call addusdens_g(becsum, rho%of_r)
 
   ! ... symmetrize rho(G) 
+#if 1
   do s = 1, nspin
     psic(:) = rho%of_r(:,s)
     CALL fwfft ('Dense', psic, dfftp)
@@ -345,12 +346,13 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     CALL invfft ('Dense', psic, dfftp)
     rho%of_r(:,s) = psic(:)
   enddo
-
+#endif
   itr_count = itr_count + 1
-
-!  if (.not. skip) then
-!    call backload(qpoints, red_basis, states)
-!  endif
+#if 0
+  if (.not. skip) then
+    call backload(qpoints, red_basis, states)
+  endif
+#endif
 
   call stop_clock(  ' finish_rho')
   call stop_clock('srb')

@@ -187,6 +187,7 @@ setup.o \
 spinor.o \
 sph_ind.o \
 scalapack_mod.o \
+srb-backload.o \
 srb_mod.o \
 srb-scf.o \
 srb-nscf.o \
