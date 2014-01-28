@@ -61,7 +61,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
     return
   endif
 
-  if (pp%us) then
+!  if (pp%us) then
   
   do t = 1, pp%ntyp
     allocate(V_half(nbasis, size(pp%projs(t)%dat,2)))
@@ -92,7 +92,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
     deallocate(rwork)
   enddo
 
-  else
+!  else
 
   ioff = 1
   do t = 1, nsp
@@ -106,7 +106,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
     ioff = ioff + nh(t)
    enddo
   enddo
-  endif
+!  endif
 
 END SUBROUTINE build_h_matrix
 

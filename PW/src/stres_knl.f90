@@ -29,11 +29,11 @@ subroutine stres_knl (sigmanlc, sigmakin)
   USE mp_pools,             ONLY: inter_pool_comm
   USE mp_bands,             ONLY: intra_bgrp_comm
   USE mp_global,            ONLY: intra_pool_comm
-  use mp_global,            only: me_pot, npot, my_pot_id, inter_pot_comm
+  use mp_global,            only: me_pot, npot, my_pot_id, inter_pot_comm, nproc_pot
   USE mp,                   ONLY: mp_sum
   use input_parameters, only : use_srb
   use srb, only : qpoints, states, bstates, wgq, scb
-  use srb_matrix, only : dmat, copy_dmat, setup_dmat, serial_scope
+  use srb_matrix, only : dmat, copy_dmat, setup_dmat, serial_scope, pot_scope
 
   implicit none
   real(DP) :: sigmanlc (3, 3), sigmakin (3, 3)
@@ -136,8 +136,11 @@ subroutine stres_knl (sigmanlc, sigmakin)
      !
      CALL allocate_bec_type ( nkb, nbnd, becp, intra_bgrp_comm )
      if (okvan) then
-     call copy_dmat(tmp_mat, bstates%host_ar(1))
-     if (size(bstates%host_ar) == 1) then
+         call copy_dmat(tmp_mat, bstates%host_ar(1))
+     else
+         call setup_dmat(tmp_mat, nkb, nbnd, nkb, min(16,nbnd/nproc_pot), scope_in = pot_scope)
+     endif
+     if (size(bstates%host_ar) .le. 1) then
        if (MOD(ik-1, npot) == my_pot_id) then
          call get_buffer(tmp_mat%dat, nkb*nbnd_l, bstates%file_unit, q)
        else
@@ -161,7 +164,6 @@ subroutine stres_knl (sigmanlc, sigmakin)
      endif
      call mp_sum(serial_mat%dat, intra_pool_comm)
      becp%k = serial_mat%dat
-     endif 
      call stress_us_srb (ik+(s-1)*qpoints%nred, gk, sigmanlc)
      CALL deallocate_bec_type ( becp )
     enddo !spin

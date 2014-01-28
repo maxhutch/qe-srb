@@ -20,7 +20,7 @@ SUBROUTINE force_us_srb( forcenl )
   USE ions_base,            ONLY : nat, ntyp => nsp, ityp
   USE klist,                ONLY : nks, xk, ngk
   USE gvect,                ONLY : g
-  USE uspp,                 ONLY : nkb, qq, deeq, qq_so, deeq_nc
+  USE uspp,                 ONLY : nkb, qq, deeq, qq_so, deeq_nc, okvan
   USE uspp_param,           ONLY : upf, nh, newpseudo, nhm
   USE wvfct,                ONLY : wg, et, ecutwfc
   USE lsda_mod,             ONLY : lsda, current_spin, isk, nspin
@@ -29,7 +29,7 @@ SUBROUTINE force_us_srb( forcenl )
   USE noncollin_module,     ONLY : npol, noncolin
   USE spin_orb,             ONLY : lspinorb
   USE io_files,             ONLY : iunwfc, nwordwfc, iunigk
-  USE buffers,              ONLY : get_buffer
+  USE buffers,              ONLY : get_buffer, open_buffer, save_buffer
   USE becmod,               ONLY : bec_type, becp, allocate_bec_type, deallocate_bec_type
   USE mp_global,            ONLY : inter_pool_comm, intra_bgrp_comm, intra_pool_comm
   USE mp_global,            ONLY : npot, inter_pot_comm
@@ -218,6 +218,7 @@ SUBROUTINE force_us_srb( forcenl )
        integer :: ibnd_g
        COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
        integer :: npw, npwx_tmp, nbnd
+       logical :: stat
        integer, external :: indxl2g
        type(dmat) :: tmp_mat
        ! counters
@@ -256,6 +257,7 @@ SUBROUTINE force_us_srb( forcenl )
           ! make <G| d beta(q)/dR> = <G | g | beta(q)>
           DO ipol = 0, 3
              if (ipol == 0) then 
+               if (size(bstates%host_ar) > 0) cycle 
                vkb1 = vkb
              else
              DO jkb = 1, nkb
@@ -292,7 +294,13 @@ SUBROUTINE force_us_srb( forcenl )
                        dprojs(:,:,0), scb%length, &
                        tmp_mat%dat, scb%length, zero, &
                        becp%k, nkb)
-            !call mp_sum(becp%k, intra_pool_comm)
+            if (bstates%file_unit < 0) then
+              bstates%file_unit = 4827
+              call open_buffer(bstates%file_unit, 'bstates', size(becp%k), 1, stat)
+            endif
+            if (MOD(ik-1, npot) == my_pot_id) then
+              call save_buffer(becp%k, size(becp%k), bstates%file_unit,(ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
+            endif
           else if (size(bstates%host_ar) == 1) then
             if (MOD(ik-1, npot) == my_pot_id) then
               call get_buffer(becp%k, nkb*nbnd, bstates%file_unit, (ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
