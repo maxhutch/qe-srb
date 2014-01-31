@@ -1243,7 +1243,8 @@ MODULE input_parameters
         integer :: ntrans(3) = (/1, 1, 1 /) ! do we want to interpolate in this dimension?
         integer :: basis_life = 1
 
-        real(DP) :: proj_tol = 0.003 ! all proj's we've tried work with this 
+        real(DP) :: aux_tol = 0.003 ! all proj's we've tried work with this 
+        integer  :: min_aux_size = 16 ! minimum number of atoms to use aux basis on
         real(DP) :: trace_tol = 1.d-7 ! negative values means no trucation
         integer  :: max_basis_size = -1   ! negative values means no trucation
         real(DP) :: freeze_basis = -1.d0 ! scf accuracy after which the basis stops changing
@@ -1254,7 +1255,7 @@ MODULE input_parameters
         ! update this!
         NAMELIST / srb / use_srb, rho_reduced, &
                              ntrans, basis_life, freeze_basis, &
-                             proj_tol, trace_tol, max_basis_size, &
+                             aux_tol, min_aux_size, trace_tol, max_basis_size, &
                              use_cuda, srb_debug
 
 !===============================================================================

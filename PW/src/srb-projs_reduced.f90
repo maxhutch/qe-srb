@@ -1,12 +1,10 @@
-#define THRESH 65
-
 subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   USE kinds, ONLY : DP
   use constants, only : tpi
   USE srb_types, ONLY : basis, pseudop
   use srb_matrix, only : setup_dmat, load_from_local, pot_scope, print_dmat
 
-  use input_parameters, only : proj_tol
+  use input_parameters, only : aux_tol, min_aux_size
   USE us, ONLY : dq, tab
   USE uspp, only : nkb, nhtol, nhtolm, indv
   use uspp_param, only : nh, nhm, lmaxkb, upf
@@ -79,10 +77,10 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       pp%nkb_l = pp%nkb_l + size(pp%projs(t)%dat,2) 
       pp%p_unit(t) = 3000+t
       write(fname, '(A6,I4)') "projs_", t
-      if (size(pp%projs(t)%dat) > 0) &
+      if (size(pp%projs(t)%dat) > 0) then
         call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
-      old_basis_length = opt_basis%length
-      write(*,*) "old_basis_length ", old_basis_length
+        write(*,*) "opened ", pp%p_unit(t), info
+      endif
     enddo
     jkb = 1
     ! this makes assumptions about atom ordering by type
@@ -102,15 +100,16 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     pp%ntyp = ntyp
     pp%nat  = nat
     pp%nkb  = nkb
+    old_basis_length = opt_basis%length
   else
     ! resize nbasis
     do t = 1, ntyp    
       call setup_dmat(pp%projs(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t), pot_scope)
+      call print_dmat(pp%projs(t))
     enddo
   endif
 
   allocate (ylm(npw, (lmaxkb + 1)**2), gk(3, npw), qg(npw), vq(npw))
-
   ! if we have a longer buffer - adjust size of file dynamically
   do t = 1, ntyp    
     if (opt_basis%length > old_basis_length .and. size(pp%projs(t)%dat) > 0) then
@@ -132,7 +131,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     allocate(vbas(npw, nhm*nq))
     allocate(sv(nhm*nq))
     do t = 1, ntyp ! loop over types
-      if (pp%na(t) < THRESH) cycle
+      if (pp%na(t) < min_aux_size) cycle
       vbs = 0
       do q = 1, nq ! loop over aux q-grid
         qtmp = xq(:,q) - floor(xq(:,q))
@@ -191,7 +190,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       fq = vbs
       do ih = 1, fq
         vbs = ih
-        if (abs(1 - sum(sv(fq-ih+1:fq))/sum(sv(1:fq))) < proj_tol) exit
+        if (abs(1 - sum(sv(fq-ih+1:fq))/sum(sv(1:fq))) < aux_tol) exit
       enddo
       allocate(buffer(npw, vbs))
       call zgemm('N', 'N', npw, vbs, fq, one, &
@@ -217,8 +216,9 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
 
   ! transform the projectors
   allocate(vkb1(npw, nhm), vkb1z(npw, nhm))
+  jkb_old = 0
   types: do t = 1, ntyp ! loop over types
-    if (pp%na(t) < THRESH) then
+    if (pp%na(t) < min_aux_size) then
       allocate(vkb2(npw, nh(t)*pp%na(t)), vkb3(nbasis, nh(t)*pp%na(t)))
       do q = 1, nq
         call start_clock('  proj_init')
@@ -259,7 +259,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       deallocate(vkb2, vkb3)
       cycle
     endif
-
+    write(*,*) "Starting aux part"
     vbs = pp%b_size(t)
     allocate(vbas(npw, vbs))
     call get_buffer(vbas, npw*vbs, pp%b_unit, t) ! read the aux basis
@@ -328,6 +328,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
           endif
         enddo
       enddo chan2
+
       ! transform vkb1 into the auxillary basis
       vkb1z = cmplx(vkb1, kind=DP)
       call ZGEMM('C', 'N', vbs, nh(t), npw, one, &
@@ -336,9 +337,10 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
                  vkb2, vbs)
       call mp_sum(vkb2(:,1:nh(t)), intra_pool_comm)
       call stop_clock('  make_vkb')
-      
+
       ! apply structure factor to take to atomic position
       call start_clock('  apply_S')
+#if 1
       atom: do a = 1+me_pool, nat, nproc_pool
         if (ityp(a) /= t) cycle
         arg = tpi * sum(qcart(:)*tau(:,a))
@@ -349,16 +351,16 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
           call zgemv('N', nbasis, vbs, prefac, &
                      S(:,:,(a-1)/nproc_pool+1), nbasis, &
                      vkb2(:,ih), 1, zero, &
-                     pp%projs(t)%dat(:,pp%na_off(a) + ih), 1)
+                     pp%projs(t)%dat(:,pp%na_off(a) + ih-1), 1)
         enddo
       enddo atom
+#endif 
 !      write(*,*) jkb_old, nh(t), na(t), nkb
       call mp_sum(pp%projs(t)%dat(:,jkb_old+1:jkb_old+nh(t)*pp%na(t)), intra_pool_comm)
       call stop_clock('  apply_S')
-
       ! save!
       call start_clock('  proj_save')
-      if (MOD(q-1, npot) == my_pot_id) then
+      if (MOD(q-1, npot) == my_pot_id .and. size(pp%projs(t)%dat) > 0) then
         call save_buffer(pp%projs(t)%dat, size(pp%projs(t)%dat), pp%p_unit(t), (q-1)/npot+1)
       endif
       call stop_clock('  proj_save')
