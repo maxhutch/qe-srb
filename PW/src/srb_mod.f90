@@ -43,6 +43,7 @@ module srb_types
     TYPE(c_ptr)               :: D_d = C_NULL_PTR
     TYPE(c_ptr)               :: S_d = C_NULL_PTR
     INTEGER, allocatable      :: p_unit(:)
+    INTEGER                   :: h_unit = -3997
     INTEGER                   :: s_unit = -3998
     integer                   :: b_unit = -3999
     integer                   :: b_size(16)
@@ -164,7 +165,7 @@ MODULE srb
       type(pseudop), intent(inout) :: pp
     end subroutine copy_pseudo_cuda
 
-    SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk)
+    SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
       USE kinds,   ONLY : DP
       USE srb_types, ONLY : basis, ham_expansion, pseudop, kproblem
       TYPE(ham_expansion),      INTENT(in)  :: ham
@@ -172,6 +173,7 @@ MODULE srb
       type(pseudop), intent(inout) :: pp
       integer, intent(in)     :: spin
       type(kproblem), INTENT(INOUT) :: Hk
+      integer :: q
     end subroutine build_h_matrix
 
     subroutine build_projs(opt_basis, xq, nq, pp)

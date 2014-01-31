@@ -130,7 +130,7 @@
     end if
     spin: do s = 1, nspin
       CALL start_clock(' build_mat' )
-      call build_h_matrix(h_coeff, qpoints%xr(:,q), projs, s, Hk)
+      call build_h_matrix(h_coeff, qpoints%xr(:,q), projs, s, Hk, (1-q)/npot-1)
       CALL stop_clock(' build_mat' )
 
       CALL start_clock( ' diagonalize' )

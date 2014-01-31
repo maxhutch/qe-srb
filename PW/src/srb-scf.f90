@@ -240,7 +240,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         ! ... Build dense Hamiltonian matrix
         !
         CALL start_clock(' build_mat' )
-        call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk)
+        if (basis_age == 0) then
+          call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk, (1-q)/npot-1)
+        else
+          call build_h_matrix(h_coeff, qpoints%xr(:,q), pp, s, Hk, (q-1)/npot+1)
+        endif
         CALL stop_clock(' build_mat' )
 
         ! 
