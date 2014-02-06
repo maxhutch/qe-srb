@@ -1244,6 +1244,7 @@ MODULE input_parameters
         integer :: basis_life = 1
 
         real(DP) :: aux_tol = 0.003 ! all proj's we've tried work with this 
+        real(DP) :: dens_tol = 0.00001 ! tolerance on rank-1 components of density
         integer  :: min_aux_size = 16 ! minimum number of atoms to use aux basis on
         real(DP) :: trace_tol = 1.d-7 ! negative values means no trucation
         integer  :: max_basis_size = -1   ! negative values means no trucation
@@ -1255,7 +1256,7 @@ MODULE input_parameters
         ! update this!
         NAMELIST / srb / use_srb, rho_reduced, &
                              ntrans, basis_life, freeze_basis, &
-                             aux_tol, min_aux_size, trace_tol, max_basis_size, &
+                             dens_tol, aux_tol, min_aux_size, trace_tol, max_basis_size, &
                              use_cuda, srb_debug
 
 !===============================================================================

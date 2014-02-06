@@ -1,6 +1,3 @@
-#define W_TOL 0.00001
-#define BLOCK_SIZE 1024
-
 subroutine transform_rho(rho_srb, opt_basis, rho)
   use kinds, only : DP
   use srb_types, only : basis
@@ -22,6 +19,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   use scalapack_mod, only : scalapack_localindex
   use mp, only : mp_sum
   use mp_global, only : me_image, inter_pot_comm, my_pot_id
+  use input_parameters, only : dens_tol
   USE wvfct, only: ecutwfc_int => ecutwfc
 
   IMPLICIT NONE
@@ -83,7 +81,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   trace = sum(S)
   max_band = 1
   do ibnd = 1, nbasis
-      if (S(nbasis+1-ibnd)*(nbasis+1.-ibnd)/trace < W_TOL) exit
+      if (S(nbasis+1-ibnd)*(nbasis+1.-ibnd)/trace < dens_tol) exit
       max_band = ibnd
   enddo
   if (me_image == 0) write(*,*) max_band, " of ", nbasis

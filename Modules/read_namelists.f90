@@ -1150,6 +1150,7 @@ MODULE read_namelists_module
        CALL mp_bcast( ntrans, ionode_id, intra_image_comm  )
        CALL mp_bcast( basis_life, ionode_id, intra_image_comm  )
        CALL mp_bcast( freeze_basis, ionode_id, intra_image_comm  )
+       CALL mp_bcast( dens_tol, ionode_id, intra_image_comm  )
        CALL mp_bcast( aux_tol, ionode_id, intra_image_comm  )
        CALL mp_bcast( min_aux_size, ionode_id, intra_image_comm  )
        CALL mp_bcast( trace_tol, ionode_id, intra_image_comm  )
