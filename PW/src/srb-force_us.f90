@@ -300,6 +300,8 @@ SUBROUTINE force_us_srb( forcenl )
             endif
             if (MOD(ik-1, npot) == my_pot_id) then
               call save_buffer(becp%k, size(becp%k), bstates%file_unit,(ik+(s-1)*(qpoints%nred+npot)-1)/npot + 1)
+            else
+              becp%k = cmplx(0.d0, kind=DP)
             endif
           else if (size(bstates%host_ar) == 1) then
             if (MOD(ik-1, npot) == my_pot_id) then
