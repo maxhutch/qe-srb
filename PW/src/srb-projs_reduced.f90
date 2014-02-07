@@ -341,6 +341,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       ! apply structure factor to take to atomic position
       call start_clock('  apply_S')
 #if 1
+      pp%projs(t)%dat = zero
       atom: do a = 1+me_pool, nat, nproc_pool
         if (ityp(a) /= t) cycle
         arg = tpi * sum(qcart(:)*tau(:,a))
@@ -351,12 +352,12 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
           call zgemv('N', nbasis, vbs, prefac, &
                      S(:,:,(a-1)/nproc_pool+1), nbasis, &
                      vkb2(:,ih), 1, zero, &
-                     pp%projs(t)%dat(:,pp%na_off(a) + ih-1), 1)
+                     pp%projs(t)%dat(:,(a-1)*nh(t) + ih), 1)
         enddo
       enddo atom
 #endif 
 !      write(*,*) jkb_old, nh(t), na(t), nkb
-      call mp_sum(pp%projs(t)%dat(:,jkb_old+1:jkb_old+nh(t)*pp%na(t)), intra_pool_comm)
+      call mp_sum(pp%projs(t)%dat, intra_pool_comm)
       call stop_clock('  apply_S')
       ! save!
       call start_clock('  proj_save')
