@@ -134,10 +134,11 @@ subroutine stres_knl (sigmanlc, sigmakin)
      !
      !  contribution from the  nonlocal part
      !
+     if (nkb < 1) cycle
      CALL allocate_bec_type ( nkb, nbnd, becp, intra_bgrp_comm )
      if (okvan) then
          call copy_dmat(tmp_mat, bstates%host_ar(1))
-     else
+     else 
          call setup_dmat(tmp_mat, nkb, nbnd, nkb, min(16,nbnd/nproc_pot), scope_in = pot_scope)
      endif
      if (size(bstates%host_ar) .le. 1) then
