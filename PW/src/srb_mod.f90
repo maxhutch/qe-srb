@@ -46,6 +46,7 @@ module srb_types
     INTEGER                   :: h_unit = -3997
     INTEGER                   :: s_unit = -3998
     integer                   :: b_unit = -3999
+    integer                   :: v_unit = -4000
     integer                   :: b_size(16)
     integer                   :: ntyp
     integer                   :: nat

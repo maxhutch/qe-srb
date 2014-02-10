@@ -52,6 +52,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
     call get_buffer(Hk%H%dat, size(Hk%H%dat), pp%h_unit, q)
   ! if USPP or V^nl has changed, compute it
   else 
+    Hk%H%dat = cmplx(0.d0, kind=DP)
     do t = 1, pp%ntyp
       allocate(V_half(nbasis, size(pp%projs(t)%dat,2)))
       allocate(rwork(2*nhm*nbasis))
@@ -76,7 +77,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
       call block_outer(nbasis, size(pp%projs(t)%dat,2), &
                        one,  V_half, nbasis, &
                              pp%projs(t)%dat, nbasis, &
-                       zero, Hk%H)
+                       one,  Hk%H)
       deallocate(V_half)
       deallocate(rwork)
     enddo

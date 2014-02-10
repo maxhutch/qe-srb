@@ -321,7 +321,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     deallocate(rho_srb)
   else
     ! Go straight to real-space (bad idea)
-    !call build_rho(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, red_basis, nspin, rho, becsum)
+    call build_rho(states, bstates, wgq(:,:), qpoints%wr(:) / nspin, red_basis, nspin, rho, becsum)
   endif
   CALL stop_clock( ' build_rho' )
   call start_clock(  ' finish_rho')

@@ -46,7 +46,7 @@ subroutine build_rho(states, betawfc, wg, wq, opt_basis, nspin, rho, becsum)
   integer :: ioff, a, t, ijh, ih, jh, k, spin
 
   npw   = size(opt_basis%elements, 1)
-  nbnd  = size(states%host_ar, 2)
+  nbnd  = size(states%host_ar(1)%dat, 2)
   nk    = states%nk / nspin
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma, ngm, g, ecutwfc_int/tpiba2, npw, igk, g2kin)
@@ -66,11 +66,11 @@ subroutine build_rho(states, betawfc, wg, wq, opt_basis, nspin, rho, becsum)
       max_band = ibnd
   enddo
 
-  if (size(states%host_ar, 3) == 1) then
-    ptr => states%host_ar(:,:,1)
+  if (size(states%host_ar) == 1) then
+    ptr => states%host_ar(1)%dat
     call get_buffer(ptr, nbasis*nbnd, states%file_unit, k)
   else
-    ptr => states%host_ar(:,:,k)
+    ptr => states%host_ar(k)%dat
   endif
 
 #ifdef AVOID_FFT
@@ -128,18 +128,18 @@ subroutine build_rho(states, betawfc, wg, wq, opt_basis, nspin, rho, becsum)
   ! ==================================================================
   ! Add the non-local part
   ! ==================================================================
-  if (size(betawfc%host_ar,1) == 0) return 
+  if (size(betawfc%host_ar) == 0) return 
 
   call start_clock('  addproj')
 
   kpoint: do k = 1, nk * nspin
     spin = (k-1) / nk + 1
 
-  if (size(betawfc%host_ar, 3) == 1) then
-    ptr => betawfc%host_ar(:,:,1)
+  if (size(betawfc%host_ar) == 1) then
+    ptr => betawfc%host_ar(1)%dat
     call get_buffer(ptr, nkb*nbnd, betawfc%file_unit, k)
   else
-    ptr => betawfc%host_ar(:,:,k)
+    ptr => betawfc%host_ar(k)%dat
   endif
 
   band: DO ibnd = 1, nbnd
