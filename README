@@ -87,11 +87,15 @@ There are additional optional parameters:
    matrix method, which faster when 4*nbnd*nq > nbasis
    * Default: .true.
    * Recommended: .true.
- * proj_tol (double) defines the largest tolerated error in the norm of the
+ * aux_tol (double) defines the largest tolerated error in the norm of the
    overlap matrix composed of projectors at the input k-points.  Similar
    to trace_tol, but for projectors and exact (no Shirley interpolation)
    * Default: 3.D-3
    * Recommended: 3.D-3
+ * min_aux_size (integer) defines the minimum number of atoms per type
+   for that type to use an auxilary basis.
+   * Default: 16
+   * Recommended: 16
  * freeze_basis (double) defines the energy convergence at which to stop
    updating the basis.  Negative values signal to use sqrt(conv_thr)
    * Default: -1
