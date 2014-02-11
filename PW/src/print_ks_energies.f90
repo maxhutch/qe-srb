@@ -26,6 +26,8 @@ SUBROUTINE print_ks_energies()
   USE control_flags,        ONLY : conv_elec, lbands, iverbosity
   USE mp_bands,             ONLY : root_bgrp, intra_bgrp_comm, inter_bgrp_comm
   USE mp,                   ONLY : mp_sum, mp_bcast
+  use input_parameters, only : use_srb
+  use srb, only : qpoints, wgq, ets
   !
   IMPLICIT NONE
   !
@@ -41,9 +43,16 @@ SUBROUTINE print_ks_energies()
       kbnd,         &! counter on bands
       ibnd_up,      &! counter on bands
       ibnd_dw,      &! counter on bands
-      ibnd         
+      ibnd,         &
+      nkstot_l        
   !
-  IF (nkstot >= 100 .and. iverbosity <= 0 ) THEN
+  if (use_srb) then
+    nkstot_l = qpoints%nred
+  else 
+    nkstot_l = nkstot
+  endif
+
+  IF (nkstot_l >= 100 .and. iverbosity <= 0 ) THEN
      WRITE( stdout, '(/,5x,a)') &
      "Number of k-points >= 100: set verbosity='high' to print the bands."
   ELSE
@@ -59,6 +68,37 @@ SUBROUTINE print_ks_energies()
   CALL mp_bcast( ngk_g, root_bgrp, intra_bgrp_comm )
   CALL mp_bcast( ngk_g, root_bgrp, inter_bgrp_comm )
   !
+  if (use_srb) then
+  DO ik = 1, qpoints%nred
+  !
+     IF ( lsda ) THEN
+        !
+        IF ( ik == 1 ) WRITE( stdout, 9015)
+        IF ( ik == ( 1 + nkstot / 2 ) ) WRITE( stdout, 9016)
+        !
+     END IF
+     !
+     IF ( conv_elec ) THEN
+        WRITE( stdout, 9021 ) ( qpoints%xr(i,ik), i = 1, 3 ), 0
+     ELSE
+        WRITE( stdout, 9020 ) ( qpoints%xr(i,ik), i = 1, 3 )
+     END IF
+     !
+     WRITE( stdout, 9030 ) ( ets(ibnd,ik) * rytoev, ibnd = 1, nbnd )
+     !
+     IF( iverbosity > 0 .AND. .NOT. lbands ) THEN
+        !
+        WRITE( stdout, 9032 )
+        IF (ABS(qpoints%wr(ik))>1.d-10) THEN
+           WRITE( stdout, 9030 ) ( wgq(ibnd,ik)/qpoints%wr(ik), ibnd = 1, nbnd )
+        ELSE
+           WRITE( stdout, 9030 ) ( wgq(ibnd,ik), ibnd = 1, nbnd )
+        ENDIF
+        !
+     END IF
+     !
+  END DO
+  else
   DO ik = 1, nkstot
   !
      IF ( lsda ) THEN
@@ -88,6 +128,7 @@ SUBROUTINE print_ks_energies()
      END IF
      !
   END DO
+  endif
   !
   DEALLOCATE ( ngk_g )
   !
