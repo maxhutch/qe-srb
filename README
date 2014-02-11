@@ -30,6 +30,40 @@ For 2D sheets in the x-y plane:
 
 These can be tweaked based on the physics of the system.
 
+_NOTE_
+There is temporarily an additional constraint that the order in the 
+ATOMIC_SPECIES and ATOMIC_POSITIONS cards are consistent.  For
+example, this is OK:
+ ATOMIC_SPECIES
+  Zn 65.39  Zn.UPF
+  Cu 63.546 Cu.UPF
+
+ ATOMIC_POSITIONS crystal
+  Zn  0.21780000  0.21780000  0.21780000
+  Zn -0.21780000  0.00000000  0.00000000
+  Cu -0.34400000 -0.34400000 -0.34400000
+
+But this is not:
+ ATOMIC_SPECIES
+  Cu 63.546 Cu.UPF
+  Zn 65.39  Zn.UPF
+
+ ATOMIC_POSITIONS crystal
+  Zn  0.21780000  0.21780000  0.21780000
+  Zn -0.21780000  0.00000000  0.00000000
+  Cu -0.34400000 -0.34400000 -0.34400000
+
+Nor is this:
+ ATOMIC_SPECIES
+  Zn 65.39  Zn.UPF
+  Cu 63.546 Cu.UPF
+
+ ATOMIC_POSITIONS crystal
+  Zn  0.21780000  0.21780000  0.21780000
+  Cu -0.34400000 -0.34400000 -0.34400000
+  Zn -0.21780000  0.00000000  0.00000000
+
+
 There are additional optional parameters:
  * basis_life (int) sets the number of SCF iterations each basis is
    used for.
