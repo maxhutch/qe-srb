@@ -54,6 +54,17 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   COMPLEX(DP), external :: ZDOTC
   REAL(DP), external :: DZNRM2
 
+  interface
+subroutine build_centered_projs(qcart, t, gk, qg, vq, ylm, igk, vkb1)
+  use kinds, only : DP
+  real(DP), intent(in) :: qcart(3)
+  integer, intent(in) :: t
+  real(DP), intent(out) :: gk(:,:), qg(:), vq(:), ylm(:,:)
+  integer, intent(in) :: igk(:)
+  real(DP), intent(out) :: vkb1(:,:)
+end subroutine
+  end interface
+
   ! initial setup
   nbasis = opt_basis%length
   npw = size(opt_basis%elements, 1)
@@ -63,6 +74,9 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   k_gamma = 0.d0
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma(:), ngm, g, ecutwfc/tpiba2, npw, igk, g2kin)
+
+
+
   if (.not. allocated(pp%projs)) then
     allocate(pp%projs(ntyp), pp%p_unit(ntyp))
     allocate(pp%na(ntyp), pp%na_off(nat), pp%nt_off(ntyp))
@@ -123,52 +137,25 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
 
   ! if the auxillary basis isn't in file, make it
   if (pp%b_unit < 0) then 
-    call start_clock('  make_vbas')
     pp%b_unit = - pp%b_unit
-    ! auxillary q-grid
+    pp%v_unit = - pp%v_unit
     call open_buffer(pp%b_unit, 'vbas', npwx*nhm*nq, 1, info)
+    call open_buffer(pp%v_unit, 'vkb_x', nhm*nq*nhm, 1, info)
 
+    ! auxillary q-grid
     allocate(vbas(npw, nhm*nq))
     allocate(sv(nhm*nq))
     do t = 1, ntyp ! loop over types
+      allocate(vkb1(npw, nh(t)), vkb1z(npw, nh(t)))
+      call start_clock('  make_vbas')
       if (pp%na(t) < min_aux_size) cycle
-      vbs = 0
       do q = 1, nq ! loop over aux q-grid
         qtmp = xq(:,q) - floor(xq(:,q))
         qcart = matmul( bg, qtmp )
-
-        ! make ylm
-        forall (ig = 1:npw)
-          gk (:,ig) = qcart(:) + g(:, igk(ig) )
-          qg (ig) = dot_product(gk(:, ig), gk(:,ig))
-        end forall
-        call ylmr2 ((lmaxkb+1)**2, npw, gk, qg, ylm)
-        ! make vkb1
-        forall (ig = 1:npw) qg(ig) = sqrt(qg(ig))*tpiba
-        ! calculate beta in G-space using an interpolation table
-        do b = 1, upf(t)%nbeta
-          vq = 0.d0
-          do ig = 1, npw
-            px = qg(ig)/dq - int(qg(ig)/dq)
-            ux = 1.d0 - px; vx = 2.d0 - px; wx = 3.d0 - px
-            i0 = INT(qg(ig)/dq) + 1
-            i1 = i0 + 1; i2 = i0 + 2; i3 = i0 + 3
-            if (i0 > nqx .or. i1 > nqx .or. i2 > nqx .or. i3 > nqx) cycle
-            vq (ig) = tab (i0, b, t) * ux * vx * wx / 6.d0 + &
-                      tab (i1, b, t) * px * vx * wx / 2.d0 - &
-                      tab (i2, b, t) * px * ux * wx / 2.d0 + &
-                      tab (i3, b, t) * px * ux * vx / 6.d0
-          enddo
-          ! add spherical harmonic part
-          do ih = 1, nh(t)
-            if (b .eq. indv(ih, t)) then
-              vbs = vbs + 1 
-              lm = nhtolm(ih, t)
-              forall(ig = 1:npw) vbas(ig, vbs) = vq(ig) * ylm(ig, lm)
-            endif
-          enddo
-        enddo 
+        call build_centered_projs(qcart, t, gk, qg, vq, ylm, igk, vkb1)
+        vbas(:,(q-1)*nh(t)+1:q*nh(t)) = vkb1
       enddo 
+      vbs = nh(t) * nq
       ! SVD!
       allocate(C(vbs, vbs))
       call zherk('U', 'C', vbs, npw, one, &
@@ -206,17 +193,37 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       enddo
       ! end SVD
       call save_buffer(buffer, npw*vbs, pp%b_unit, t)
-      deallocate(buffer, C)
+      deallocate(C)
+
       write(*,*) "VBS: ", (1.*vbs)/nh(t), nq, t
       pp%b_size(t) = vbs
+      call stop_clock('  make_vbas')
+
+
+      allocate(vkb2(vbs, nh(t)))
+      call start_clock('  make_vkb')
+      do q = 1, nq ! loop over aux q-grid
+        qtmp = xq(:,q) - floor(xq(:,q))
+        qcart = matmul( bg, qtmp )
+        call build_centered_projs(qcart, t, gk, qg, vq, ylm, igk, vkb1)
+
+        ! transform vkb1 into the auxillary basis
+        vkb1z = cmplx(vkb1, kind=DP)
+        call ZGEMM('C', 'N', vbs, nh(t), npw, one, &
+                 buffer, npw, &
+                 vkb1z, npw, zero, &
+                 vkb2, vbs)
+      call mp_sum(vkb2, intra_pool_comm)
+      call save_buffer(vkb2, size(vkb2), pp%v_unit, (t-1)*nq + q) 
+      enddo
+      call stop_clock('  make_vkb')
+      deallocate(buffer)
+      deallocate(vkb1, vkb1z, vkb2)
     enddo
     deallocate(vbas, sv)
-    call stop_clock('  make_vbas')
   endif
 
   ! transform the projectors
-  allocate(vkb1(npw, nhm), vkb1z(npw, nhm))
-  jkb_old = 0
   types: do t = 1, ntyp ! loop over types
     if (pp%na(t) < min_aux_size) then
       allocate(vkb2(npw, nh(t)*pp%na(t)), vkb3(nbasis, nh(t)*pp%na(t)))
@@ -259,6 +266,8 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
       deallocate(vkb2, vkb3)
       cycle
     endif
+
+
     write(*,*) "Starting aux part"
     vbs = pp%b_size(t)
     allocate(vbas(npw, vbs))
@@ -267,12 +276,11 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     ! make structure factors in mixed basis (<opt_basis|S|vbas>)
     call start_clock('  make_St')
     allocate(S(nbasis, vbs, (nat-1)/nproc_pool+1), Stmp(nbasis, vbs), sk(npw), buffer(npw, vbs))
-    do a = 1, nat
-      if (ityp(a) /= t) cycle
+    do a = 1, pp%na(t)
       do ig = 1, npw
-        sk (ig) = eigts1 (mill(1,igk(ig)), a) * &
-                  eigts2 (mill(2,igk(ig)), a) * &
-                  eigts3 (mill(3,igk(ig)), a)
+        sk (ig) = eigts1 (mill(1,igk(ig)), a+pp%nt_off(t)-1) * &
+                  eigts2 (mill(2,igk(ig)), a+pp%nt_off(t)-1) * &
+                  eigts3 (mill(3,igk(ig)), a+pp%nt_off(t)-1)
       enddo
       forall (ig = 1:npw, j = 1:vbs) buffer(ig, j) = vbas(ig,j) * sk(ig)
       call ZGEMM('C', 'N', nbasis, vbs, npw, one, &
@@ -288,75 +296,26 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
     ! construct and transform origin-centered projectors
     allocate(vkb2(vbs, nh(t)))
     qs2: do q = 1, nq
-      call start_clock('  make_vkb')
-      qtmp = xq(:,q) - floor(xq(:,q))
-      qcart = matmul( bg, qtmp )
-
-      ! make ylm
-      do ig = 1, npw
-         gk (:,ig) = qcart(:) + g(:, igk(ig) )
-         qg (ig) = gk(1, ig)**2 +  gk(2, ig)**2 + gk(3, ig)**2
-      enddo
-      !
-      call ylmr2 ((lmaxkb+1)**2, npw, gk, qg, ylm)
-      do ig = 1, npw
-        qg(ig) = sqrt(qg(ig))*tpiba
-      enddo
-      ! make vkb1
-      jkb = jkb_old
-      ! calculate beta in G-space using an interpolation table
-      chan2: do b = 1, upf(t)%nbeta
-        do ig = 1, npw
-          px = qg(ig)/dq - int(qg(ig)/dq)
-          ux = 1.d0 - px; vx = 2.d0 - px; wx = 3.d0 - px
-          i0 = INT(qg(ig)/dq) + 1
-          i1 = i0 + 1; i2 = i0 + 2; i3 = i0 + 3
-          if (i0 > nqx .or. i1 > nqx .or. i2 > nqx .or. i3 > nqx) then
-            vq (ig ) = 0.d0
-            cycle
-          endif
-          vq (ig) = tab (i0, b, t) * ux * vx * wx / 6.d0 + &
-                    tab (i1, b, t) * px * vx * wx / 2.d0 - &
-                    tab (i2, b, t) * px * ux * wx / 2.d0 + &
-                    tab (i3, b, t) * px * ux * vx / 6.d0
-        enddo
-        ! add spherical harmonic part
-        do ih = 1, nh(t)
-          if (b .eq. indv(ih, t)) then
-            lm = nhtolm(ih, t)
-            forall(ig = 1:npw) vkb1(ig, ih) = vq(ig) * ylm(ig, lm)
-          endif
-        enddo
-      enddo chan2
-
-      ! transform vkb1 into the auxillary basis
-      vkb1z = cmplx(vkb1, kind=DP)
-      call ZGEMM('C', 'N', vbs, nh(t), npw, one, &
-                 vbas, npw, &
-                 vkb1z, npw, zero, &
-                 vkb2, vbs)
-      call mp_sum(vkb2(:,1:nh(t)), intra_pool_comm)
-      call stop_clock('  make_vkb')
+     qtmp = xq(:,q) - floor(xq(:,q))
+     qcart = matmul( bg, qtmp )
+     call get_buffer(vkb2, size(vkb2), pp%v_unit, (t-1)*nq+q)
 
       ! apply structure factor to take to atomic position
       call start_clock('  apply_S')
 #if 1
       pp%projs(t)%dat = zero
-      atom: do a = 1+me_pool, nat, nproc_pool
-        if (ityp(a) /= t) cycle
-        arg = tpi * sum(qcart(:)*tau(:,a))
+      atom: do a = 1+me_pool, pp%na(t), nproc_pool
+        arg = tpi * sum(qcart(:)*tau(:,a+pp%nt_off(t)-1))
         phase = CMPLX (cos(arg), - sin(arg))
         do ih = 1, nh(t)
-          jkb = jkb + 1
           prefac = (0.d0, -1.d0)**nhtol(ih, t) * phase
           call zgemv('N', nbasis, vbs, prefac, &
                      S(:,:,(a-1)/nproc_pool+1), nbasis, &
                      vkb2(:,ih), 1, zero, &
-                     pp%projs(t)%dat(:,(a-1)*nh(t) + ih), 1)
+                     pp%projs(t)%dat(1,(a-1)*nh(t) + ih), 1)
         enddo
       enddo atom
 #endif 
-!      write(*,*) jkb_old, nh(t), na(t), nkb
       call mp_sum(pp%projs(t)%dat, intra_pool_comm)
       call stop_clock('  apply_S')
       ! save!
@@ -365,19 +324,80 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
         call save_buffer(pp%projs(t)%dat, size(pp%projs(t)%dat), pp%p_unit(t), (q-1)/npot+1)
       endif
       call stop_clock('  proj_save')
-
     enddo qs2
-    jkb_old = jkb_old + nh(t) * pp%na(t)
-    deallocate(vbas)
-    deallocate(S)
     deallocate(vkb2)
 
+    deallocate(vbas)
+    deallocate(S)
   enddo types
 
-  deallocate(vkb1, vkb1z, qg, vq, ylm, gk)
+  deallocate(qg, vq, ylm, gk)
   deallocate(igk, g2kin)
 
   return
 
 end subroutine build_projs_reduced
+
+
+subroutine build_centered_projs(qcart, t, gk, qg, vq, ylm, igk, vkb1)
+  use kinds, only : DP
+  USE uspp, only : nkb, nhtol, nhtolm, indv
+  use uspp_param, only : nh, nhm, lmaxkb, upf
+  use gvect, only : g
+  USE us, ONLY : dq, tab
+  use cell_base, only : tpiba
+
+  real(DP), intent(in) :: qcart(3)
+  integer, intent(in) :: t
+  real(DP), intent(out) :: gk(:,:), qg(:), vq(:), ylm(:,:)
+  integer, intent(in) :: igk(:)
+  real(DP), intent(out) :: vkb1(:,:)
+
+  integer :: ig, ih, b, lm
+  integer :: npw, nqx
+  real(DP) :: px, ux, vx, wx, arg
+  integer :: i0, i1, i2, i3
+
+  nqx = size(tab,1)
+  npw = size(gk, 2)
+
+  ! make ylm
+  do ig = 1, npw
+    gk (:,ig) = qcart(:) + g(:, igk(ig) )
+    qg (ig) = gk(1, ig)**2 +  gk(2, ig)**2 + gk(3, ig)**2
+  enddo
+  call ylmr2 ((lmaxkb+1)**2, npw, gk, qg, ylm)
+
+  ! make vkb1
+  forall (ig = 1:npw) qg(ig) = sqrt(qg(ig))*tpiba
+
+  ! calculate beta in G-space using an interpolation table
+  chan2: do b = 1, upf(t)%nbeta
+    do ig = 1, npw
+      px = qg(ig)/dq - int(qg(ig)/dq)
+      ux = 1.d0 - px; vx = 2.d0 - px; wx = 3.d0 - px
+      i0 = INT(qg(ig)/dq) + 1
+      i1 = i0 + 1; i2 = i0 + 2; i3 = i0 + 3
+      if (i0 > nqx .or. i1 > nqx .or. i2 > nqx .or. i3 > nqx) then
+        vq (ig ) = 0.d0
+        cycle
+      endif
+      vq (ig) = tab (i0, b, t) * ux * vx * wx / 6.d0 + &
+                tab (i1, b, t) * px * vx * wx / 2.d0 - &
+                tab (i2, b, t) * px * ux * wx / 2.d0 + &
+                tab (i3, b, t) * px * ux * vx / 6.d0
+    enddo
+
+    ! add spherical harmonic part
+    do ih = 1, nh(t)
+      if (b .eq. indv(ih, t)) then
+        lm = nhtolm(ih, t)
+        forall(ig = 1:npw) vkb1(ig, ih) = vq(ig) * ylm(ig, lm)
+      endif
+    enddo
+    enddo chan2
+
+  return
+
+end subroutine build_centered_projs
 
