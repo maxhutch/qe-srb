@@ -27,7 +27,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
 
   ! locals
   integer q, q2, left, nbasis, npw, npwx, npwx_tmp, nqx, stat, vbs, fq
-  integer :: a, b, t, ig, ih, i, j, jkb, lm
+  integer :: a, b, t, ig, ih, i, j, i_l, j_l, jkb, lm
   integer, allocatable :: igk(:)
   real(DP), allocatable :: g2kin(:)
   real(DP) :: k_gamma(3)
@@ -45,7 +45,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   real(DP), allocatable :: work(:)
   integer, allocatable :: iwork(:)
   integer :: lwork, liwork
-  integer :: counter
+  integer :: counter, prow, pcol
   character(len=10) :: fname
 
   integer,save :: old_basis_length
@@ -145,8 +145,8 @@ end subroutine
     allocate(vbas(npw, nhm*nq))
     allocate(sv(nhm*nq))
     do t = 1, ntyp ! loop over types
-      call start_clock('  make_vbas')
       if (pp%na(t) < min_aux_size) cycle
+      call start_clock('  make_vbas')
       allocate(vkb1(npw, nh(t)), vkb1z(npw, nh(t)))
       do q = 1, nq ! loop over aux q-grid
         qtmp = xq(:,q) - floor(xq(:,q))
@@ -276,7 +276,7 @@ end subroutine
 
     ! make structure factors in mixed basis (<opt_basis|S|vbas>)
     call start_clock('  make_St')
-    allocate(S(nbasis, vbs, (nat-1)/nproc_pool+1), Stmp(nbasis, vbs), sk(npw), zbuffer(npw, vbs))
+    allocate(S(nbasis, vbs, size(pp%projs(t)%dat,2)/nh(t)), Stmp(nbasis, vbs), sk(npw), zbuffer(npw, vbs))
     do a = 1, pp%na(t)
       do ig = 1, npw
         sk (ig) = eigts1 (mill(1,igk(ig)), a+pp%nt_off(t)-1) * &
@@ -289,7 +289,11 @@ end subroutine
                zbuffer, npw, zero, &
                Stmp, nbasis)
       call mp_sum(Stmp, intra_pool_comm)
-      if (MOD(a-1,nproc_pool) == me_pool) S(:,:,(a-1)/nproc_pool+1) = Stmp
+      call infog2l(1, 1+(a-1)*nh(t), &
+                   pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
+                                     pp%projs(t)%myrow, pp%projs(t)%mycol, &
+                   i_l, j_l, prow, pcol)
+      if (prow == pp%projs(t)%myrow .and. pcol == pp%projs(t)%mycol) S(:,:,(j_l-1)/nh(t)+1) = Stmp
     enddo
     call stop_clock('  make_St')
     deallocate(sk, zbuffer, Stmp)
@@ -297,7 +301,7 @@ end subroutine
     ! construct and transform origin-centered projectors
     allocate(vkb2(vbs, nh(t)))
     allocate(zbuffer(vbs,nh(t)))
-    qs2: do q = 1, nq
+    qs2: do q = 1+my_pot_id, nq, npot
      qtmp = xq(:,q) - floor(xq(:,q))
      qcart = matmul( bg, qtmp )
      call davcio ( vkb2, vbs*nh(t), pp%v_unit, (t-1)*nq+q, -1 )
@@ -307,19 +311,24 @@ end subroutine
       call start_clock('  apply_S')
 #if 1
       pp%projs(t)%dat = zero
-      atom: do a = 1+me_pool, pp%na(t), nproc_pool
+      atom: do a = 1, pp%na(t)
+        call infog2l(1, 1+(a-1)*nh(t), &
+                     pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
+                                       pp%projs(t)%myrow, pp%projs(t)%mycol, &
+                     i_l, j_l, prow, pcol)
+        if (prow /= pp%projs(t)%myrow .or. pcol /= pp%projs(t)%mycol) cycle
         arg = tpi * sum(qcart(:)*tau(:,a+pp%nt_off(t)-1))
         phase = CMPLX (cos(arg), - sin(arg))
         do ih = 1, nh(t)
           prefac = (0.d0, -1.d0)**nhtol(ih, t) * phase
           call zgemv('N', nbasis, vbs, prefac, &
-                     S(:,:,(a-1)/nproc_pool+1), nbasis, &
+                     S(:,:,(j_l-1)/nh(t)+1), nbasis, &
                      zbuffer(:,ih), 1, zero, &
-                     pp%projs(t)%dat(1,(a-1)*nh(t) + ih), 1)
+                     pp%projs(t)%dat(1,j_l + ih-1), 1)
         enddo
       enddo atom
 #endif 
-      call mp_sum(pp%projs(t)%dat, intra_pool_comm)
+!      call mp_sum(pp%projs(t)%dat, intra_pool_comm)
       call stop_clock('  apply_S')
       ! save!
       call start_clock('  proj_save')
