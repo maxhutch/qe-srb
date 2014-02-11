@@ -54,6 +54,8 @@ SUBROUTINE summary()
   USE esm,             ONLY : do_comp_esm, esm_summary
   USE martyna_tuckerman,ONLY: do_comp_mt
   USE realus,          ONLY : real_space
+  use input_parameters, only : use_srb
+  use srb, only : qpoints
   !
   IMPLICIT NONE
   !
@@ -315,6 +317,45 @@ SUBROUTINE summary()
      DEALLOCATE(xau)
   ENDIF
 
+  if (use_srb) then
+  IF (lgauss) THEN
+     WRITE( stdout, '(/5x,"number of k points=", i6, 2x, &
+          &             a," smearing, width (Ry)=",f8.4)') &
+          &             qpoints%nred, TRIM(smearing), degauss
+  ELSE IF (ltetra) THEN
+     WRITE( stdout,'(/5x,"number of k points=",i6, &
+          &        " (tetrahedron method)")') qpoints%nred
+  ELSE
+     WRITE( stdout, '(/5x,"number of k points=",i6)') qpoints%nred
+
+  ENDIF
+  IF ( iverbosity > 0 .OR. qpoints%nred < 100 ) THEN
+     WRITE( stdout, '(23x,"cart. coord. in units 2pi/alat")')
+     DO ik = 1, qpoints%nred
+        DO ipol = 1, 3
+           xkg = matmul(bg,qpoints%xr(:,ik))
+           ! xkg are the component in the crystal RL basis
+        ENDDO
+        WRITE( stdout, '(8x,"k(",i5,") = (",3f12.7,"), wk =",f12.7)') ik, &
+             (xkg(ipol) , ipol = 1, 3) , qpoints%wr (ik)
+     ENDDO
+  ELSE
+     WRITE( stdout, '(/5x,a)') &
+     "Number of k-points >= 100: set verbosity='high' to print them."
+  ENDIF
+  IF ( iverbosity > 0 ) THEN
+     WRITE( stdout, '(/23x,"cryst. coord.")')
+     DO ik = 1, qpoints%nred
+        DO ipol = 1, 3
+           xkg(ipol) = at(1,ipol)*qpoints%xr(1,ik) + at(2,ipol)*qpoints%xr(2,ik) + &
+                       at(3,ipol)*qpoints%xr(3,ik)
+           ! xkg are the component in the crystal RL basis
+        ENDDO
+        WRITE( stdout, '(8x,"k(",i5,") = (",3f12.7,"), wk =",f12.7)') &
+             ik, (qpoints%xr (ipol,ik) , ipol = 1, 3) , qpoints%wr (ik)
+     ENDDO
+  ENDIF
+  else
   IF (lgauss) THEN
      WRITE( stdout, '(/5x,"number of k points=", i6, 2x, &
           &             a," smearing, width (Ry)=",f8.4)') &
@@ -348,6 +389,9 @@ SUBROUTINE summary()
              ik, (xkg (ipol) , ipol = 1, 3) , wk (ik)
      ENDDO
   ENDIF
+  endif
+
+
   WRITE( stdout, '(/5x,"Dense  grid: ",i8," G-vectors", 5x, &
        &               "FFT dimensions: (",i4,",",i4,",",i4,")")') &
        &         ngm_g, dfftp%nr1, dfftp%nr2, dfftp%nr3
