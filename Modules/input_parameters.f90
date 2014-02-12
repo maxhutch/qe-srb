@@ -1243,9 +1243,9 @@ MODULE input_parameters
         integer :: ntrans(3) = (/1, 1, 1 /) ! do we want to interpolate in this dimension?
         integer :: basis_life = 1
 
-        real(DP) :: aux_tol = 0.003 ! all proj's we've tried work with this 
+        real(DP) :: aux_tol = 0.0003 ! all proj's we've tried work with this 
         real(DP) :: dens_tol = 0.00001 ! tolerance on rank-1 components of density
-        integer  :: min_aux_size = 16 ! minimum number of atoms to use aux basis on
+        integer  :: min_aux_size = 0 ! minimum number of atoms to use aux basis on
         real(DP) :: trace_tol = 1.d-7 ! negative values means no trucation
         integer  :: max_basis_size = -1   ! negative values means no trucation
         real(DP) :: freeze_basis = -1.d0 ! scf accuracy after which the basis stops changing
