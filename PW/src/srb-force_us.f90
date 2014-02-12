@@ -192,7 +192,7 @@ SUBROUTINE force_us_srb( forcenl )
        !  
        USE becmod, ONLY : calbec
        use srb, only : qpoints, states, bstates, wgq, scb, ets, spp
-       use srb_matrix, only : dmat, copy_dmat
+       use srb_matrix, only : dmat, copy_dmat, l2g
        use gvect, only : ngm
        use cell_base, only : tpiba2, tpiba
        use wvfct, only : npwx_int => npwx
@@ -215,11 +215,11 @@ SUBROUTINE force_us_srb( forcenl )
        REAL(DP) :: ps
        INTEGER       :: ik, ipol, ibnd, ig, ih, jh, na, nt, ikb, jkb, ijkb0, &
                         is, js, ijs, s
-       integer :: ibnd_g
+       integer :: ibnd_g, tmp_i
        COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0, kind=DP)
        integer :: npw, npwx_tmp, nbnd
        logical :: stat
-       integer, external :: indxl2g
+!       integer, external :: indxl2g
        type(dmat) :: tmp_mat
        ! counters
        !
@@ -322,9 +322,7 @@ SUBROUTINE force_us_srb( forcenl )
                      dbecp(:,:,ipol), nkb)
           enddo
           DO ibnd = 1, nbnd 
-             ibnd_g = indxl2g(ibnd, &
-                              states%host_ar(1)%desc(6), states%host_ar(1)%mycol, &
-                              states%host_ar(1)%desc(8), states%host_ar(1)%npcol)
+             call l2g(states%host_ar(1), 1, ibnd, tmp_i, ibnd_g)
              ! scale the D and S matrices by the energy
              IF (noncolin) THEN
                 CALL compute_deff_nc(deff_nc,et(ibnd_g,ik))

@@ -4,7 +4,7 @@
 SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
   USE kinds,   ONLY : DP
   USE srb_types, ONLY : basis, ham_expansion, pseudop, kproblem
-  use srb_matrix, only : add_diag, block_outer, print_dmat
+  use srb_matrix, only : add_diag, block_outer, print_dmat, g2l
   use mp_global, only : nproc_pot
   use constants, only : rytoev
   use uspp, only : deeq, nkb
@@ -33,7 +33,7 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
   integer :: i, j, i_l, j_l, a, t, ioff, prow, pcol
   integer :: nbasis
   integer, save :: old_size_h_matrix
-  logical :: islocal, info
+  logical :: local, info
   complex(DP) :: trace 
 
   ! ============================================================
@@ -58,11 +58,8 @@ SUBROUTINE build_h_matrix(ham, qpoint, pp, spin, Hk, q)
       allocate(rwork(2*nhm*nbasis))
       ioff = 1 !index offset
       do a = 1, pp%na(t)
-        call infog2l(1, 1+(a-1)*nh(t), &
-                     pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
-                                       pp%projs(t)%myrow, pp%projs(t)%mycol, &
-                     i_l, j_l, prow, pcol)
-        if (prow == pp%projs(t)%myrow .and. pcol == pp%projs(t)%mycol) then
+        call g2l(pp%projs(t), 1, 1+(a-1)*nh(t), i_l, j_l, local)
+        if (local) then
           ! Do the left side of the transformation
           call zlacrm(nbasis, nh(t), &
                       pp%projs(t)%dat(:,ioff:ioff+nh(t)), nbasis, &

@@ -375,6 +375,63 @@ module srb_matrix
 
   end subroutine diag
 
+  subroutine g2l(M, i, j, i_l, j_l, local)
+    implicit none
+    type(dmat), intent(in) :: M
+    integer, intent(in) :: i,j
+    integer, intent(out) :: i_l, j_l
+    logical, intent(out) :: local
+    integer :: prow, pcol
+      call infog2l(i, j, &
+                   M%desc, M%nprow, M%npcol, &
+                   M%myrow, M%mycol, &
+                   i_l, j_l, prow, pcol)
+    local = (prow == M%myrow .and. pcol == M%mycol)
+  end subroutine
+
+  subroutine l2g(M, i, j, i_g, j_g)
+    implicit none
+    type(dmat), intent(in) :: M
+    integer, intent(in) :: i,j
+    integer, intent(out) :: i_g, j_g
+    integer, external :: indxl2g
+    i_g = indxl2g(i, M%desc(5), M%myrow, M%desc(7), M%nprow)
+    j_g = indxl2g(j, M%desc(6), M%mycol, M%desc(8), M%npcol)
+  end subroutine
+
+  subroutine collect(G, L, m, n, i, j)
+    use mp_global, only : me_image, intra_pool_comm
+    use mp, only : mp_sum
+    implicit none
+    type(dmat), intent(in)    :: G
+    type(dmat), intent(inout) :: L
+    integer, intent(in) :: m, n, i, j
+    integer ::  tmp
+    tmp = L%desc(2)
+    if (G%mycol /= 0 .or. G%myrow /= 0) L%desc(2) = -1
+    call pzgemr2d(m, n, &
+                  G%dat,  i, j, G%desc, &
+                  L%dat, 1, 1, L%desc, &
+                  G%desc(2))
+    L%desc(2) = -1
+    call mp_sum(L%dat, intra_pool_comm)
+  end subroutine collect
+
+  subroutine distribute(L,G, who)
+    implicit none
+    type(dmat), intent(inout)  :: L
+    type(dmat), intent(inout) :: G
+    integer, intent(in) :: who
+    integer tmp
+    tmp =  L%desc(2) 
+    if (who .ne. 0) L%desc(2) = -1
+    call pzgemr2d(L%desc(3), L%desc(4), &
+                  L%dat, 1, 1, L%desc,  &
+                  G%dat, 1, 1, G%desc, &
+                  G%desc(2))
+    L%desc(2) = tmp
+  end subroutine distribute
+
   subroutine load_from_local(A, ia, ja, B)
     implicit none
     type(dmat), intent(inout) :: A
@@ -404,5 +461,17 @@ module srb_matrix
       B%dat(:,i) = scal(i_g) * A%dat(:,i)
     enddo
   end subroutine col_scal
+
+  subroutine parallel_inner(A, B, C, Ci)
+    implicit none
+    type(dmat), intent(in) :: A,B
+    type(dmat), intent(inout) :: C
+    integer, intent(in) :: Ci
+    complex(DP), parameter :: one = cmplx(1.d0, kind=DP), zero = cmplx(0.d0, kind=DP)
+    call pZGEMM('C', 'N', A%desc(4), B%desc(4), A%desc(3), &
+               one,  A%dat, 1, 1, A%desc, &
+                     B%dat, 1, 1, B%desc, &
+               zero, C%dat, Ci, 1, C%desc)
+  end subroutine parallel_inner
 
 end module srb_matrix

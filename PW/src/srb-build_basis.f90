@@ -13,6 +13,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   USE input_parameters, ONLY : ntrans, trace_tol, max_basis_size
   USE srb, only : srb_debug
   use srb_matrix, only : dmat, setup_dmat, block_inner, diag, pool_scope, serial_scope, print_dmat
+  use srb_matrix, only : collect
   use buffers, only : open_buffer, save_buffer
 
   use lsda_mod, only : nspin
@@ -100,7 +101,6 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   integer :: nks_orig, nks, nbnd, npw, igwx
   COMPLEX(DP), parameter :: zero = cmplx(0.d0, kind=DP), one = cmplx(1.d0,kind=DP)
   integer, allocatable, save :: shuffle(:,:)
-!  type(mydesc) :: S_desc
   type(dmat) :: S, B, Z
   nbnd = size(evc_int,2)
 
@@ -325,19 +325,8 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   allocate(opt_basis%elements(ngk_gamma, nbasis_trunc)); opt_basis%length = nbasis_trunc
 
   call setup_dmat(Z, nbasis, nbasis_trunc, scope_in = serial_scope)
-  if (me_pool == 0) then
-  call pzgemr2d(nbasis, nbasis_trunc, &
-                B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
-                Z%dat, 1, 1, Z%desc, &
-                B%desc(2))
-  else
-  Z%desc(2) = -1 
-  call pzgemr2d(nbasis, nbasis_trunc, &
-                B%dat,  1, nbasis-nbasis_trunc+1, B%desc, &
-                Z%dat, 1, 1, Z%desc, &
-                B%desc(2))
-  endif
-  call mp_sum(Z%dat, intra_pool_comm)
+  call collect(B, Z, nbasis, nbasis_trunc, 1, nbasis-nbasis_trunc+1)
+
   ! transform <G|psi><psi|B>
   call ZGEMM('N', 'N', ngk_gamma, nbasis_trunc, nbasis, one, & 
              evc_all, npwx_tmp, &

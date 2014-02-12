@@ -2,6 +2,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   use kinds, only : DP
   use srb_types, only : basis
   use srb_matrix, only : dmat, copy_dmat, diag, setup_dmat, pool_scope, serial_scope
+  use srb_matrix, only : distribute
   use scf, only : scf_type
   use cell_base, only : omega, tpiba2
   use uspp, only : nkb
@@ -69,14 +70,12 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   trace = trace + abs(rho_srb(spin)%dat(i,i))
   enddo
   call mp_sum(rho_srb(spin)%dat, inter_pot_comm)
-  if (my_pot_id .ne. 0) rho_srb(spin)%desc(2) = -1
-  call pzgemr2d(nbasis, nbasis, &
-                rho_srb(spin)%dat, 1, 1, rho_srb(spin)%desc,  &
-                rho_big%dat, 1, 1, rho_big%desc, &
-                rho_big%desc(2))
+  call distribute(rho_srb(spin), rho_big, my_pot_id)
+
   call start_clock('  svd')
   call diag(rho_big, S, sv)
   call stop_clock('  svd')
+
   S = abs(S)
   trace = sum(S)
   max_band = 1

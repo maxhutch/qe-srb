@@ -98,10 +98,8 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
   if (.not. saved) then
   ! linear term; almost the same as above except gtmp instead of g2kin
     call copy_dmat(tmp_mat, ham%con(1))
-!    allocate(gtmp(ham%desc%nrl, ham%desc%ncl), buffer(npw, nbnd))
     allocate(buffer(npw, nbnd))
     do ixyz = 1, 3
-!      gtmp = cmplx(0.d0, kind=DP)
       forall(j = 1:nbnd, i = 1:npw) buffer(i, j) = opt_basis%elements(i, j) * g(ixyz, igk(i))*tpiba
       call block_inner(nbnd, npw, &
                        one,  opt_basis%elements, npw, &
@@ -110,7 +108,6 @@ SUBROUTINE build_h_coeff(opt_basis, V_rs, ecut_srb, nspin, ham, saved_in)
                        intra_pool_comm)
       ham%lin(ixyz,:,:) = tmp_mat%dat
     enddo
-!    deallocate(gtmp, buffer)
     deallocate(buffer, tmp_mat%dat)
   endif 
   ! quadratic term is analytic (\delta(k,k) |k|^2), so we just add it in later

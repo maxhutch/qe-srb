@@ -2,7 +2,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   USE kinds, ONLY : DP
   use constants, only : tpi
   USE srb_types, ONLY : basis, pseudop
-  use srb_matrix, only : setup_dmat, load_from_local, pot_scope, print_dmat
+  use srb_matrix, only : setup_dmat, load_from_local, pot_scope, print_dmat, g2l
 
   use input_parameters, only : aux_tol, min_aux_size
   USE us, ONLY : dq, tab
@@ -41,7 +41,7 @@ subroutine build_projs_reduced(opt_basis, xq, nq, pp)
   complex(DP), parameter :: zero = cmplx(0.d0, kind=DP)
   complex(DP), parameter :: one = cmplx(1.d0, kind=DP)
   real(DP) :: qcart(3), qtmp(3), inv_norm
-  logical ::  info
+  logical ::  info, local
   real(DP), allocatable :: work(:)
   integer, allocatable :: iwork(:)
   integer :: lwork, liwork
@@ -189,10 +189,9 @@ end subroutine
         inv_norm = 1.d0/sqrt(inv_norm)
         call dscal(npw, inv_norm, buffer(:,ih), 1)
       enddo
+
       ! end SVD
-!      zbuffer = buffer
       call davcio ( buffer, npw*vbs, pp%b_unit, t, +1 )
-      !call save_buffer(buffer, npw*vbs/2, pp%b_unit, t)
       deallocate(C)
 
       write(*,*) "VBS: ", (1.*vbs)/nh(t), nq, t
@@ -215,7 +214,6 @@ end subroutine
                  vkb2, vbs)
       call mp_sum(vkb2, intra_pool_comm)
       call davcio ( vkb2, vbs*nh(t), pp%v_unit, (t-1)*nq+q, +1 )
-!      call save_buffer(vkb2, size(vkb2), pp%v_unit, (t-1)*nq + q) 
       enddo
       call stop_clock('  make_vkb')
       deallocate(buffer, zbuffer)
@@ -245,17 +243,7 @@ end subroutine
                    vkb3, nbasis)
         call mp_sum(vkb3, intra_pool_comm )
         jkb = 1
-#if 1
         call load_from_local(pp%projs(t), 1, 1, vkb3)
-#else
-        do a = 1, nat
-          if (ityp(a) /= t) cycle
-          if (pp%na_off(a) > 0) then
-            pp%projs(:,pp%na_off(a):pp%na_off(a)+nh(t)-1) = vkb3(:,jkb:jkb+nh(t)-1)
-          endif
-          jkb = jkb + nh(t)
-        enddo
-#endif
         call stop_clock('  proj_gemm')
         ! save!
         call start_clock('  proj_save')
@@ -289,11 +277,8 @@ end subroutine
                zbuffer, npw, zero, &
                Stmp, nbasis)
       call mp_sum(Stmp, intra_pool_comm)
-      call infog2l(1, 1+(a-1)*nh(t), &
-                   pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
-                                     pp%projs(t)%myrow, pp%projs(t)%mycol, &
-                   i_l, j_l, prow, pcol)
-      if (prow == pp%projs(t)%myrow .and. pcol == pp%projs(t)%mycol) S(:,:,(j_l-1)/nh(t)+1) = Stmp
+      call g2l(pp%projs(t), 1, 1+(a-1)*nh(t), i_l, j_l, local)
+      if (local) S(:,:,(j_l-1)/nh(t)+1) = Stmp
     enddo
     call stop_clock('  make_St')
     deallocate(sk, zbuffer, Stmp)
@@ -312,11 +297,8 @@ end subroutine
 #if 1
       pp%projs(t)%dat = zero
       atom: do a = 1, pp%na(t)
-        call infog2l(1, 1+(a-1)*nh(t), &
-                     pp%projs(t)%desc, pp%projs(t)%nprow, pp%projs(t)%npcol, &
-                                       pp%projs(t)%myrow, pp%projs(t)%mycol, &
-                     i_l, j_l, prow, pcol)
-        if (prow /= pp%projs(t)%myrow .or. pcol /= pp%projs(t)%mycol) cycle
+        call g2l(pp%projs(t), 1, 1+(a-1)*nh(t), i_l, j_l, local)
+        if (.not. local) cycle
         arg = tpi * sum(qcart(:)*tau(:,a+pp%nt_off(t)-1))
         phase = CMPLX (cos(arg), - sin(arg))
         do ih = 1, nh(t)

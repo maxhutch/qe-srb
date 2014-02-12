@@ -95,10 +95,10 @@ subroutine stres_knl (sigmanlc, sigmakin)
          tmp_mat%dat = states%host_ar(q)%dat
        endif
      endif
-     call setup_dmat(serial_mat, nbasis, tmp_mat%desc(4), scope_in = serial_scope)
+     call setup_dmat(serial_mat, nbasis, nbnd, scope_in = serial_scope)
      if (MOD(ik-1,npot) == my_pot_id) then
        if (me_pot /= 0) serial_mat%desc(2) = -1
-       call pzgemr2d(nbasis, tmp_mat%desc(4), &
+       call pzgemr2d(nbasis, nbnd, &
                      tmp_mat%dat, 1, 1, tmp_mat%desc, &
                      serial_mat%dat, 1, 1, serial_mat%desc, &
                      tmp_mat%desc(2))
