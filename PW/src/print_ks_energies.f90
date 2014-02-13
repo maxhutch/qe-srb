@@ -23,7 +23,7 @@ SUBROUTINE print_ks_energies()
   USE ktetra,               ONLY : ltetra
   USE wvfct,                ONLY : nbnd, et, wg
   USE fixed_occ,            ONLY : f_inp, tfixed_occ, one_atom_occupations
-  USE control_flags,        ONLY : conv_elec, lbands, iverbosity
+  USE control_flags,        ONLY : conv_elec, lbands, iverbosity, lscf
   USE mp_bands,             ONLY : root_bgrp, intra_bgrp_comm, inter_bgrp_comm
   USE mp,                   ONLY : mp_sum, mp_bcast
   use input_parameters, only : use_srb
@@ -86,7 +86,7 @@ SUBROUTINE print_ks_energies()
      !
      WRITE( stdout, 9030 ) ( ets(ibnd,ik) * rytoev, ibnd = 1, nbnd )
      !
-     IF( iverbosity > 0 .AND. .NOT. lbands ) THEN
+     IF( iverbosity > 0 .AND. lscf ) THEN
         !
         WRITE( stdout, 9032 )
         IF (ABS(qpoints%wr(ik))>1.d-10) THEN

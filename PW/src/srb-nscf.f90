@@ -28,7 +28,7 @@
   USE wavefunctions_module, ONLY : evc
 
   use srb, only : qpoints
-  use srb,              ONLY : red_basis=>scb
+  use srb,              ONLY : red_basis=>scb, ets
   use uspp, only : nkb, okvan
   use uspp_param, only : nhm
   use ions_base, only : nat
@@ -60,7 +60,7 @@
   TYPE(kproblem) :: Hk
   complex(DP), allocatable :: S_matrix2(:,:)
   type(dmat) :: evecs
-  real(DP), allocatable ::  energies(:,:)
+  real(DP), allocatable, target ::  energies(:,:)
   real(DP) :: ecut_srb
   character(255) :: fmtstr
   !
@@ -152,7 +152,8 @@
   WRITE( stdout, 9000 ) get_clock( 'PWSCF' )
   !
   WRITE( stdout, 9102 )
-
+  ets = energies(1:nbnd, :)
+  CALL print_ks_energies ( )
   open(unit=66, file="bands.dat")
   write(fmtstr,'(a,i8,a)') '(i8,3e20.12,',red_basis%length,'e20.12)'
   do q = 1, nspin * qpoints%nred
