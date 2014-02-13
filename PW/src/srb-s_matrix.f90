@@ -26,7 +26,7 @@ subroutine build_s_matrix(pp, q, Hk)
   integer :: nbasis
   logical :: info, prow, pcol
   complex(DP) :: trace
-
+  integer :: ierr
   integer,save :: old_size_s_matrix
 
   nbasis = size(pp%projs(1)%dat, 1)
@@ -85,6 +85,10 @@ subroutine build_s_matrix(pp, q, Hk)
   enddo
   write(*,*) "Trace[S] = ", trace
 #endif
+
+  ! factorize for future use in eigensolve
+  call PZPOTRF('U', nbasis, Hk%S%dat, 1,1,Hk%S%desc, ierr)
+  if (ierr /= 0) write(*,*) "zpotrf error: ", ierr
 
   call save_buffer(Hk%S%dat, size(Hk%S%dat), pp%s_unit, -q)
 

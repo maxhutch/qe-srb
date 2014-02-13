@@ -80,7 +80,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   !
   TYPE(ham_expansion), save :: h_coeff !>!< Expansion of Hamiltonian wrt k
   TYPE(kproblem)            :: Hk !>!< Hamiltonain at a specific kpoint
-  complex(DP), allocatable :: S_matrix2(:,:) !>!< Overlap matrix and copy
   real(DP), allocatable, target ::  energies(:,:) !>!< eigen-values (energies)
   type(dmat) :: evecs !>!< eigenvectors of Hamiltonian
   type(dmat), allocatable :: rho_srb(:) !>!< Denstiy matrix in reduced basis
@@ -163,13 +162,11 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   call setup_dmat(Hk%H, red_basis%length, red_basis%length, scope_in = pot_scope)
   if (okvan) then
     call copy_dmat(Hk%S, Hk%H)
-    allocate(S_matrix2(size(Hk%S%dat, 1), size(Hk%S%dat,2)))
     pp%us = .true.
     Hk%generalized = .true.
     bstates%nk = qpoints%nred * nspin
   else
     bstates%nk = 0
-    allocate(S_matrix2(1,1))
   end if
 
   ! Swapping is controled by the disk_io input param
@@ -252,11 +249,9 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
         !
         CALL start_clock( ' diagonalize' )
         if (okvan) then
-          S_matrix2(:,:) = Hk%S%dat
           Hk%generalized = .true.
           call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs, &
                            nbnd, meth_opt = meth)
-          Hk%S%dat = S_matrix2(:,:) 
         else
           Hk%generalized = .false.
           call diagonalize(Hk, energies(:,q+(s-1)*qpoints%nred), evecs,  &
@@ -274,7 +269,6 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
   enddo 
   call start_clock(  ' other')
   call mp_sum(energies, inter_pot_comm)
-  deallocate(S_matrix2)
   call stop_clock(  ' other')
   CALL start_clock( ' build_rho' )
 
