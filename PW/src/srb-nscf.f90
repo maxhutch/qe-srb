@@ -97,9 +97,7 @@
   call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length, scope_in = pot_scope)
 
   call start_clock( ' build_h_coeff' )
-  write(*,*) "making coeffs"
   call build_h_coeff(red_basis, V_rs, ecut_srb, nspin, h_coeff)
-  write(*,*) "made coeffs"
   call stop_clock(' build_h_coeff')
 
   ! Diagonalize the Hamiltonian, producing states
