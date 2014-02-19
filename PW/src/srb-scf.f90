@@ -8,7 +8,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
 !
 !
 !#define SCUDA
-#define DEBUG
+!#define DEBUG
 
   USE ISO_C_BINDING,        ONLY : c_ptr, C_NULL_PTR
 
@@ -137,7 +137,7 @@ SUBROUTINE srb_scf(evc, V_rs, rho, eband, demet, sc_error, skip)
     enddo
     call setup_dmat(h_coeff%kin_con, red_basis%length, red_basis%length, scope_in = pot_scope)
   else
-    if (me_image == 0) write(*,*) "Using a basis of length ", red_basis%length, " and age ", basis_age
+    if (me_image == 0) write(*,'(5X,A,I5,A,I3)') "Using a basis of length ", red_basis%length, " and age ", basis_age
   endif
   basis_age = basis_age + 1
   skip = ((basis_age < basis_life - 1) .or. sc_error <  freeze_Basis)

@@ -148,7 +148,6 @@ subroutine addusdens_g(becsum, rho)
   !     convert aux to real space and add to the charge density
   !
   do is = 1, nspin_mag
-  write(*,*) shape(rho(:,is)), shape(psic), dfftp%nnr
      psic(:) = (0.d0, 0.d0)
      psic( nl(:) ) = aux(:,is)
      if (gamma_only) psic( nlm(:) ) = CONJG(aux(:,is))

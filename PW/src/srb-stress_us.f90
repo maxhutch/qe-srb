@@ -369,7 +369,6 @@ SUBROUTINE stress_us_srb( ik_, gk, sigmanlc )
        ! ... the contribution is calculated only on one processor because
        ! ... partial results are later summed over all processors
        !
-       write(*,*) "Got here"
        DO ibnd = 1, nbnd
           fac = wgq(ibnd,ik_)
           IF (ABS(fac) < 1.d-9) CYCLE

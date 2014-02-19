@@ -83,7 +83,7 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
       if (S(nbasis+1-ibnd)*(nbasis+1.-ibnd)/trace < dens_tol) exit
       max_band = ibnd
   enddo
-  if (me_image == 0) write(*,*) max_band, " of ", nbasis
+  if (me_image == 0) write(*,'(5X,A,I5,A,I5)') 'rank(rho) is ', max_band, " of ", nbasis
 
   ! transform the representative wave-functions to <G|
   allocate(tmp(npw, max_band))

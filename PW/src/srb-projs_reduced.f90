@@ -92,7 +92,6 @@ end subroutine
       write(fname, '(A6,I4)') "projs_", t
       if (size(pp%projs(t)%dat) > 0) then
         call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
-        write(*,*) "opened ", pp%p_unit(t), info
       endif
     enddo
     jkb = 1
@@ -118,7 +117,6 @@ end subroutine
     ! resize nbasis
     do t = 1, ntyp    
       call setup_dmat(pp%projs(t), nbasis, nh(t)*pp%na(t), nbasis, nh(t), pot_scope)
-      call print_dmat(pp%projs(t))
     enddo
   endif
 
@@ -126,7 +124,6 @@ end subroutine
   ! if we have a longer buffer - adjust size of file dynamically
   do t = 1, ntyp    
     if (opt_basis%length > old_basis_length .and. size(pp%projs(t)%dat) > 0) then
-      write(*,*) "adjusting buffer"
       call close_buffer(pp%p_unit(t),'delete')
       write(fname, '(A6,I4)') "projs_", t
       call open_buffer(pp%p_unit(t), trim(fname), size(pp%projs(t)%dat), 1, info)
@@ -194,7 +191,7 @@ end subroutine
       call davcio ( buffer, npw*vbs, pp%b_unit, t, +1 )
       deallocate(C)
 
-      write(*,*) "VBS: ", (1.*vbs)/nh(t), nq, t
+      if (me_pool == 0) write(*,'(5X,A,F7.2,A,I5,A,I2)') "Aux basis uses ", (1.*vbs)/nh(t), " of ", nq, "; type ", t
       pp%b_size(t) = vbs
       call stop_clock('  make_vbas')
 
@@ -256,8 +253,6 @@ end subroutine
       cycle
     endif
 
-
-    write(*,*) "Starting aux part"
     vbs = pp%b_size(t)
     allocate(vbas(npw, vbs))
     call davcio ( vbas, npw*vbs, pp%b_unit, t, -1 )

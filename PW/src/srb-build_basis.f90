@@ -317,7 +317,7 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
     ptrace = sum(abs(eigU(1:nbasis-nbasis_trunc))) / sum(abs(eigU))
   endif
   if (me_pool == 0) then
-    write(*,'(A,I7,A,I7,A,F10.6,A)') " Made basis: ", nbasis_trunc, " of ", nks*nbnd, " elements (", abs(ptrace)*100, "% error)"
+    write(*,'(5X,A,I7,A,I7,A,F10.6,A)') "Made basis: ", nbasis_trunc, " of ", nks*nbnd, " elements (", abs(ptrace)*100, "% error)"
   endif
   !=============================
   ! Express the basis in the gamma-point pw basis <G|B>
