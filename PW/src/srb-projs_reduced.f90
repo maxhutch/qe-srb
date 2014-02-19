@@ -74,9 +74,14 @@ end subroutine
   allocate(igk(ngm), g2kin(ngm))
   call gk_sort(k_gamma(:), ngm, g, ecutwfc/tpiba2, npw, igk, g2kin)
 
-
-
   if (.not. allocated(pp%projs)) then
+    ! check ordering
+    do a = 2, nat
+      if (ityp(a) < ityp(a-1)) then
+        CALL errore('srb-projs_reduced','atomic positions out of order', a)
+      endif
+    enddo
+
     allocate(pp%projs(ntyp), pp%p_unit(ntyp))
     allocate(pp%na(ntyp), pp%na_off(nat), pp%nt_off(ntyp))
     pp%na = 0; pp%na_off = 0
