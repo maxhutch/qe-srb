@@ -42,6 +42,7 @@ SUBROUTINE force_us_srb( forcenl )
   REAL(DP) :: forcenl(3,nat)
   ! output: the nonlocal contribution
   !
+  call start_clock('k_force')
   IF ( gamma_only ) THEN
      !
      CALL force_us_gamma_srb( forcenl )
@@ -51,6 +52,7 @@ SUBROUTINE force_us_srb( forcenl )
      CALL force_us_k_srb( forcenl )
      !
   END IF  
+  call stop_clock('k_force')
   !
   RETURN
   !

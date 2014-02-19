@@ -138,6 +138,7 @@ SUBROUTINE sum_band()
      CALL sum_band_k()
      !
   END IF
+  CALL start_clock( 'rho_finish' )
   IF (dft_is_meta() .OR. lxdm) DEALLOCATE (kplusg)
   !
   IF( okpaw )  THEN
@@ -230,6 +231,7 @@ SUBROUTINE sum_band()
      END DO
   END IF
   !
+  CALL stop_clock( 'rho_finish' )
   CALL stop_clock( 'sum_band' )
   !
   RETURN

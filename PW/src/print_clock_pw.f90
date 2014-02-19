@@ -93,6 +93,7 @@ SUBROUTINE print_clock_pw()
       CALL print_clock( 'addus:strf' )
       CALL print_clock( 'addus:aux2' )
       CALL print_clock( 'addus:aux' )
+      CALL print_clock( 'rho_finish' )
    ENDIF
    !
    IF ( isolve == 0 ) THEN
@@ -148,6 +149,10 @@ SUBROUTINE print_clock_pw()
    CALL print_clock( 'add_vuspsi' )
    CALL print_clock( 'vhpsi' )
    CALL print_clock( 'h_psi_meta' )
+   !
+   WRITE( stdout, '(/5x,"Called by force/stress:")' )
+   CALL print_clock( 'k_stress' )
+   CALL print_clock( 'k_force' )
    !
    WRITE( stdout, '(/5X,"General routines")' )
    !

@@ -58,6 +58,7 @@ subroutine stres_knl (sigmanlc, sigmakin)
 
   kfac(:) = 1.d0
 
+call start_clock ('k_stress')
   if (use_srb)  then
     nbnd = states%host_ar(1)%desc(4)
     nbnd_l = size(states%host_ar(1)%dat,2)
@@ -225,6 +226,7 @@ subroutine stres_knl (sigmanlc, sigmakin)
 !     CALL deallocate_bec_type ( becp ) 
   enddo
   endif 
+  call stop_clock ('k_stress')
   !
   ! add the US term from augmentation charge derivatives
   !
@@ -242,7 +244,6 @@ subroutine stres_knl (sigmanlc, sigmakin)
      enddo
   enddo
   !
-  write(*,*) sigmakin
   if (gamma_only) then
      sigmakin(:,:) = 2.d0 * e2 / omega * sigmakin(:,:)
   else

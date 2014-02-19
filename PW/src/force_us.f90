@@ -40,6 +40,7 @@ SUBROUTINE force_us( forcenl )
   !
   CALL allocate_bec_type ( nkb, nbnd, becp, intra_bgrp_comm )   
   !
+  call start_clock ('k_force')
   IF ( gamma_only ) THEN
      !
      CALL force_us_gamma( forcenl )
@@ -49,6 +50,7 @@ SUBROUTINE force_us( forcenl )
      CALL force_us_k( forcenl )
      !
   END IF  
+  call stop_clock ('k_force')
   !
   CALL deallocate_bec_type ( becp )   
   !
