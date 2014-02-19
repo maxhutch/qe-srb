@@ -117,6 +117,7 @@ module srb_matrix
     else
       A%scope = pool_scope
     endif
+    if (nprow(A%scope) * npcol(A%scope) == 1) A%scope = serial_scope
 
     ! pick reasonable default blocks
     if (.not. (present(mb_in) .or. present(nb_in))) then
@@ -169,6 +170,7 @@ module srb_matrix
     A%mycol = B%mycol
     A%nprow = B%nprow
     A%npcol = B%npcol
+    A%scope = B%scope
     nrl = numroc(A%desc(3), A%desc(5), A%myrow, 0, A%nprow)
     ncl = numroc(A%desc(4), A%desc(6), A%mycol, 0, A%npcol)
     if (allocated(A%dat)) deallocate(A%dat)
@@ -400,7 +402,7 @@ module srb_matrix
   end subroutine
 
   subroutine collect(G, L, m, n, i, j)
-    use mp_global, only : me_image, intra_pool_comm
+    use mp_global, only : me_image, intra_pool_comm, intra_pot_comm
     use mp, only : mp_sum
     implicit none
     type(dmat), intent(in)    :: G
@@ -408,13 +410,14 @@ module srb_matrix
     integer, intent(in) :: m, n, i, j
     integer ::  tmp
     tmp = L%desc(2)
+    !write(*,*) G%mycol, G%myrow, comm_scope(G%scope), intra_pot_comm
     if (G%mycol /= 0 .or. G%myrow /= 0) L%desc(2) = -1
     call pzgemr2d(m, n, &
                   G%dat,  i, j, G%desc, &
                   L%dat, 1, 1, L%desc, &
                   G%desc(2))
-    L%desc(2) = -1
-    call mp_sum(L%dat, intra_pool_comm)
+    L%desc(2) = tmp
+    call mp_sum(L%dat, comm_scope(G%scope))
   end subroutine collect
 
   subroutine distribute(L,G, who)

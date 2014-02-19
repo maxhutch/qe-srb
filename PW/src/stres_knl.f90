@@ -28,12 +28,13 @@ subroutine stres_knl (sigmanlc, sigmakin)
   use lsda_mod, only : nspin
   USE mp_pools,             ONLY: inter_pool_comm
   USE mp_bands,             ONLY: intra_bgrp_comm
-  USE mp_global,            ONLY: intra_pool_comm
+  USE mp_global,            ONLY: intra_pool_comm, intra_pot_comm
   use mp_global,            only: me_pot, npot, my_pot_id, inter_pot_comm, nproc_pot
   USE mp,                   ONLY: mp_sum
   use input_parameters, only : use_srb
   use srb, only : qpoints, states, bstates, wgq, scb
   use srb_matrix, only : dmat, copy_dmat, setup_dmat, serial_scope, pot_scope
+  use srb_matrix, only : collect
 
   implicit none
   real(DP) :: sigmanlc (3, 3), sigmakin (3, 3)
@@ -60,8 +61,8 @@ subroutine stres_knl (sigmanlc, sigmakin)
 
 call start_clock ('k_stress')
   if (use_srb)  then
-    nbnd = states%host_ar(1)%desc(4)
     nbnd_l = size(states%host_ar(1)%dat,2)
+    nbnd = nbnd_l; call mp_sum(nbnd, intra_pot_comm)
     allocate(igk2(ngm), g2kin(ngm))
     call gk_sort(k_gamma, ngm, g, ecutwfc/tpiba2, npw, igk2, g2kin)
     
@@ -98,16 +99,12 @@ call start_clock ('k_stress')
      endif
      call setup_dmat(serial_mat, nbasis, nbnd, scope_in = serial_scope)
      if (MOD(ik-1,npot) == my_pot_id) then
-       if (me_pot /= 0) serial_mat%desc(2) = -1
-       call pzgemr2d(nbasis, nbnd, &
-                     tmp_mat%dat, 1, 1, tmp_mat%desc, &
-                     serial_mat%dat, 1, 1, serial_mat%desc, &
-                     tmp_mat%desc(2))
+       call collect(tmp_mat, serial_mat, nbasis, nbnd, 1, 1)
      endif
-     call mp_sum(serial_mat%dat, intra_pool_comm)
+     call mp_sum(serial_mat%dat, inter_pot_comm)
 
      ! transform them into the PW basis
-     call ZGEMM('N', 'N', npw, tmp_mat%desc(4), nbasis, one, &
+     call ZGEMM('N', 'N', npw, nbnd, nbasis, one, &
                 scb%elements, npw, &
                 serial_mat%dat, nbasis, zero, &
                 evc, npwx)
@@ -156,15 +153,11 @@ call start_clock ('k_stress')
        endif
      endif
      !call mp_sum(tmp_mat%dat, inter_pot_comm)
-     call setup_dmat(serial_mat, nkb, tmp_mat%desc(4), scope_in = serial_scope)
+     call setup_dmat(serial_mat, nkb, nbnd, scope_in = serial_scope)
      if (MOD(ik-1,npot) == my_pot_id) then
-       if (me_pot /= 0) serial_mat%desc(2) = -1
-       call pzgemr2d(nkb, tmp_mat%desc(4), &
-                     tmp_mat%dat, 1, 1, tmp_mat%desc, &
-                     serial_mat%dat, 1, 1, serial_mat%desc, &
-                     tmp_mat%desc(2))
+       call collect(tmp_mat, serial_mat, nkb, nbnd, 1, 1)
      endif
-     call mp_sum(serial_mat%dat, intra_pool_comm)
+     call mp_sum(serial_mat%dat, inter_pot_comm)
      becp%k = serial_mat%dat
      call stress_us_srb (ik+(s-1)*qpoints%nred, gk, sigmanlc)
      CALL deallocate_bec_type ( becp )

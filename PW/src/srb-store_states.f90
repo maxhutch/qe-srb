@@ -68,14 +68,7 @@ subroutine store_states(wfc, pp, k, states, betawfc)
 !  call print_dmat(wfc)
 !  call print_dmat(betawfc%host_ar(ptr))
   do t = 1, size(pp%na)
-#if 1
     call parallel_inner(pp%projs(t), wfc, betawfc%host_ar(ptr), pp%na_off(pp%nt_off(t)))
-#else
-    call pZGEMM('C', 'N', pp%na(t)*nh(t), states%host_ar(1)%desc(4), nbasis, &
-               one,  pp%projs(t)%dat, 1, 1, pp%projs(t)%desc, &
-                     wfc%dat, 1, 1, states%host_ar(1)%desc, &
-               zero, betawfc%host_ar(ptr)%dat, pp%na_off(pp%nt_off(t)), 1, betawfc%host_ar(1)%desc)
-#endif
   enddo
 
   if (size(betawfc%host_ar) == 1) then
