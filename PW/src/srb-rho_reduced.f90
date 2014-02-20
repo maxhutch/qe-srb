@@ -47,7 +47,6 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   real(DP), allocatable :: root(:)
   integer :: ioff, a, t, ijh, ih, jh, i, j, k, spin, q, ptr
   integer :: max_band
-  real(DP) :: trace
   integer, external :: indxl2g
 
   nbasis = size(states%host_ar(1)%dat, 1)
@@ -57,7 +56,7 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
   allocate(root(nbasis))
   call copy_dmat(tmp, states%host_ar(1))
 
-  trace = 0.
+  call start_clock('  rho_matrix')
   do k = 1+my_pot_id, nk, npot
    do spin = 1, nspin
     q = (k+(spin-1)*(nk+npot)-1)/npot + 1
@@ -73,40 +72,14 @@ subroutine build_rho_reduced(states, betawfc, wg, wq, nspin, rho, becsum)
     else
       ptr = q
     endif
-#if 1
     call col_scal(states%host_ar(ptr), tmp, wg(:,k+(spin-1)*nk)/omega)
     call block_outer(nbasis, nbnd, &
                      one, tmp%dat, nbasis, &
                           states%host_ar(ptr)%dat, nbasis, &
                      one, rho(spin))
-    trace = trace + sum(wg(1:5,k+(spin-1)*nk)/omega)
-
-#else
-    max_band = 1
-    do ibnd = 1, nbnd
-      if (wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk) < W_TOL) exit
-      max_band = ibnd
-    enddo
-
-    root(1:max_band) = sqrt(wg(1:max_band, k+(spin-1)*nk) / omega)
-    forall(j = 1:max_band, i = 1:nbasis) tmp%dat(i,j) = states%host_ar(ptr)%dat(i,j) * root(j)
-
-    call zherk('U', 'N', nbasis, max_band, one, &
-               tmp%dat, nbasis, one, &
-               rho(spin)%dat, nbasis)
-
-    do ibnd = max_band + 1, nbnd
-      if (ibnd > size(wg,1)) exit 
-      if (abs(wg(ibnd, k+(spin-1)*nk) / wq(k+(spin-1)*nk)) < W_TOL) cycle
-
-      wz = cmplx(wg(ibnd, k+(spin-1)*nk) / omega, kind=DP)
-      call ZHERK('U', 'N', nbasis, 1, wz, &
-                 tmp%dat(:, ibnd), nbasis, one, &
-                 rho(spin)%dat, nbasis)
-    enddo
-#endif
    enddo
   enddo
+  call stop_clock('  rho_matrix')
 
   deallocate(root)
 
