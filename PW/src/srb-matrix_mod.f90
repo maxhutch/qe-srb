@@ -27,6 +27,8 @@ module srb_matrix
 
   integer, external :: numroc
 
+  private :: pdiag, sdiag
+
   contains
   subroutine print_dmat(A)
     implicit none
@@ -95,9 +97,6 @@ module srb_matrix
       !call blacs_get( -1, 0, ctx_s(i) )
       call blacs_gridmap( ctx_s(i), map, nproc(nscope), nprow(i), npcol(i))
       call mp_barrier(intra_pool_comm)
-      call mp_barrier(intra_pool_comm)
-      call mp_barrier(intra_pool_comm)
-      call mp_barrier(intra_pool_comm)
     enddo
 
   end subroutine srb_matrix_init
@@ -144,6 +143,10 @@ module srb_matrix
       else
         nb = max(4,4*(n/(4*npcol(A%scope))))
       endif
+    endif
+
+    if (A%scope == serial_scope) then
+      mb = m; nb = n
     endif
 
     if (nprow(A%scope) > 1 .and. mb == m) then
@@ -316,6 +319,46 @@ module srb_matrix
     integer :: num
     logical :: factored
 
+    if (present(num_in)) then
+      num = num_in
+    else
+      num = A%m
+    endif
+
+    if (present(factored_in)) then
+      factored = factored_in
+    else
+      factored = .false.
+    endif
+
+    if (present(B)) then
+      if (A%scope == serial_scope .and. Z%scope == serial_scope) then
+        call sdiag(a, w, z, num, factored, b)
+      else
+        call pdiag(a, w, z, num, factored, b)
+      endif
+    else
+      if (A%scope == serial_scope .and. Z%scope == serial_scope) then
+        call sdiag(a, w, z, num, factored)
+      else
+        call pdiag(a, w, z, num, factored)
+      endif
+    endif
+  end subroutine diag
+
+  subroutine pdiag(A, W, Z, num, factored, B)
+    use kinds, only : DP
+    use mp_global, only : me_image, intra_pool_comm
+    use mp, only : mp_sum
+    implicit none
+    
+    type(dmat) :: A
+    type(dmat), target :: Z
+    real(DP) :: W(:)
+    integer, intent(in) :: num
+    logical, intent(in) :: factored
+    type(dmat), optional :: B
+
     logical :: use_tmp
     complex(DP), pointer :: ztmp(:,:)
     integer :: tmp_desc(9)
@@ -326,18 +369,6 @@ module srb_matrix
     complex(DP), parameter :: one = cmplx(1.d0,kind=DP)
     real(DP) :: abstol, scal
     real(DP), external :: PDLAMCH
-
-    if (present(num_in)) then
-      num = num_in
-    else
-      num = A%desc(3)
-    endif
-
-    if (present(factored_in)) then
-      factored = factored_in
-    else
-      factored = .false.
-    endif
 
     ! check if we need tmp space for evecs
     use_tmp = Z%desc(4) < A%desc(4) .or. Z%desc(2) .ne. A%desc(2)
@@ -356,18 +387,11 @@ module srb_matrix
     endif
 
     if (present(B)) then
-      allocate(work(1))
-      call PZHENGST(1, 'U', A%desc(4), &
+      call PZHEGST(1, 'U', A%desc(4), &
                     A%dat, 1, 1, A%desc, &
                     B%dat, 1, 1, B%desc, &
-                    scal, work, -1, ierr)
-      lwork = work(1); deallocate(work); allocate(work(lwork)) 
-      call PZHENGST(1, 'U', A%desc(4), &
-                    A%dat, 1, 1, A%desc, &
-                    B%dat, 1, 1, B%desc, &
-                    scal, work, lwork, ierr)
+                    scal, ierr)
       if (ierr /= 0) write(*,*) "zhengst error: ", ierr
-      deallocate(work)
     endif
 
     allocate(ifail(A%desc(3)))
@@ -419,7 +443,69 @@ module srb_matrix
       endif
     endif
 
-  end subroutine diag
+  end subroutine pdiag
+
+  subroutine sdiag(A, W, Z, num, factored, B)
+    use kinds, only : DP
+    use mp_global, only : me_image, intra_pool_comm
+    use mp, only : mp_sum
+    implicit none
+    
+    type(dmat) :: A
+    type(dmat), target :: Z
+    real(DP) :: W(:)
+    integer, intent(in) :: num
+    logical, intent(in) :: factored
+    type(dmat), optional :: B
+
+    logical :: use_tmp
+    integer, allocatable :: ifail(:), iwork(:)
+    real(DP), allocatable :: rwork(:)
+    complex(DP), allocatable :: work(:)
+    integer :: ierr, lwork, lrwork, liwork, nv_out, ne_out
+    complex(DP), parameter :: one = cmplx(1.d0,kind=DP)
+    real(DP) :: abstol, scal
+    real(DP), external :: DLAMCH
+
+    ! check if we need tmp space for evecs
+    abstol = 2.d0*DLAMCH(A%desc(2), 'U')
+
+    if (present(B) .and. .not. factored) then
+      call cholesky(B)
+    endif
+
+    if (present(B)) then
+      call ZHEGST(1, 'U', A%desc(4), &
+                    A%dat, A%m, &
+                    B%dat, B%m, &
+                    ierr)
+      if (ierr /= 0) write(*,*) "zhegst error: ", ierr
+    endif
+
+    allocate(ifail(A%desc(3)))
+    allocate(work(1), rwork(7*A%m), iwork(5*A%m))
+    CALL zheevx('V', 'I', 'U', A%m, &
+                 A%dat, A%m, &
+                 0, 0, 1, num, &
+                 abstol, ne_out, W, &
+                 Z%dat, Z%m, &
+                 work, -1, rwork, iwork, &
+                 ifail, ierr)
+    lwork = work(1); deallocate(work); allocate(work(lwork))
+    CALL zheevx('V', 'I', 'U', A%m, &
+                 A%dat, A%m, &
+                 0, 0, 1, num, &
+                 abstol, ne_out, W, &
+                 Z%dat, Z%m, &
+                 work, lwork, rwork, iwork, &
+                 ifail, ierr)
+    if (ierr /= 0) write(*,*) "zheevx error: ", ierr
+    if (present(B)) then
+      call ZTRSM('L', 'U', 'N', 'N', A%m, ne_out, one, &
+                  B%dat, B%m, &
+                  Z%dat, Z%m)
+    endif
+  end subroutine sdiag
 
   subroutine g2l(M, i, j, i_l, j_l, local)
     implicit none
@@ -515,10 +601,17 @@ module srb_matrix
     type(dmat), intent(inout) :: C
     integer, intent(in) :: Ci
     complex(DP), parameter :: one = cmplx(1.d0, kind=DP), zero = cmplx(0.d0, kind=DP)
-    call pZGEMM('C', 'N', A%desc(4), B%desc(4), A%desc(3), &
-               one,  A%dat, 1, 1, A%desc, &
-                     B%dat, 1, 1, B%desc, &
-               zero, C%dat, Ci, 1, C%desc)
+    if (A%scope == serial_scope .and. B%scope == serial_scope .and. C%scope == serial_scope) then
+      call ZGEMM('C', 'N', A%n, B%n, A%m, &
+                 one,  A%dat, A%m, &
+                       B%dat, B%m, &
+                 zero, C%dat(Ci,1), C%m)
+    else
+      call pZGEMM('C', 'N', A%desc(4), B%desc(4), A%desc(3), &
+                 one,  A%dat, 1, 1, A%desc, &
+                       B%dat, 1, 1, B%desc, &
+                 zero, C%dat, Ci, 1, C%desc)
+    endif
   end subroutine parallel_inner
 
   subroutine cholesky(A)
