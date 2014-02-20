@@ -2,6 +2,7 @@ module srb_matrix
   use kinds, only : DP
   type dmat
     integer :: desc(9)
+    integer :: n,m
     complex(DP), allocatable :: dat(:,:)
     integer :: myrow
     integer :: mycol
@@ -110,6 +111,8 @@ module srb_matrix
     integer, intent(in), optional :: scope_in
 
     integer :: mb, nb, ctx, nrl, ncl, info
+   
+    A%m = m; A%n = n
 
     ! default scope is pool
     if (present(scope_in)) then
@@ -165,7 +168,9 @@ module srb_matrix
     type(dmat), intent(inout) :: A
     type(dmat), intent(in) :: B
     integer :: nrl, ncl
-    A%desc = B%desc
+    A%desc  = B%desc
+    A%m     = B%m
+    A%n     = B%n
     A%myrow = B%myrow
     A%mycol = B%mycol
     A%nprow = B%nprow
@@ -296,7 +301,7 @@ module srb_matrix
 
   end subroutine add_diag
 
-  subroutine diag(A, W, Z, B, num_in)
+  subroutine diag(A, W, Z, B, num_in, factored_in)
     use kinds, only : DP
     use mp_global, only : me_image, intra_pool_comm
     use mp, only : mp_sum
@@ -307,7 +312,9 @@ module srb_matrix
     real(DP) :: W(:)
     type(dmat), optional :: B
     integer, optional :: num_in
+    logical, optional :: factored_in
     integer :: num
+    logical :: factored
 
     logical :: use_tmp
     complex(DP), pointer :: ztmp(:,:)
@@ -315,13 +322,21 @@ module srb_matrix
     integer, allocatable :: ifail(:), iclustr(:), iwork(:)
     real(DP), allocatable :: rwork(:), gap(:)
     complex(DP), allocatable :: work(:)
-    integer :: info, lwork, lrwork, liwork, nv_out, ne_out, ctx_tmp
-    real(DP) :: abstol
+    integer :: ierr, lwork, lrwork, liwork, nv_out, ne_out, ctx_tmp
+    complex(DP), parameter :: one = cmplx(1.d0,kind=DP)
+    real(DP) :: abstol, scal
     real(DP), external :: PDLAMCH
+
     if (present(num_in)) then
       num = num_in
     else
       num = A%desc(3)
+    endif
+
+    if (present(factored_in)) then
+      factored = factored_in
+    else
+      factored = .false.
     endif
 
     ! check if we need tmp space for evecs
@@ -333,45 +348,74 @@ module srb_matrix
       ztmp => Z%dat
       tmp_desc = Z%desc
     endif 
-    abstol = PDLAMCH(A%desc(2), 'U')
 
-    if (.not. present(B)) then
-      allocate(ifail(A%desc(3)))
-      allocate(iclustr(2*A%nprow*A%npcol), gap(A%nprow*A%npcol))
-      allocate(work(1), rwork(1), iwork(1))
-      CALL pzheevx('V', 'I', 'U', A%desc(3), &
-                  A%dat, 1, 1, A%desc, &
-                  0, 0, 1, num, &
-                  abstol, ne_out, nv_out, W, &
-                  -1.d0, &
-                  ztmp, 1, 1, tmp_desc, &
-                  work, -1, rwork, -1, iwork, -1, &
-                  ifail, iclustr, gap, info)
-      lwork = work(1); deallocate(work); allocate(work(lwork))
-      lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
-      liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
-      CALL pzheevx('V', 'I', 'U', A%desc(3), &
-                   A%dat, 1, 1, A%desc, &
-                   0, 0, 1, num, &
-                   abstol, ne_out, nv_out, W, &
-                   -1.d0, &
-                   ztmp, 1, 1, tmp_desc, &
-                   work, lwork, rwork, lrwork, iwork, liwork, &
-                   ifail, iclustr, gap, info)
-      if (use_tmp) then
-        if ( Z%scope == 1 .and. A%scope == 3 ) then
-          Z%dat = 0.d0
-          if (me_image .ne. 0) then
-            ctx_tmp = Z%desc(2)
-            Z%desc(2) = -1
-          endif
-          call pzgemr2d(A%desc(3), num, &
-                        ztmp,  1, 1, tmp_desc, &
-                        Z%dat, 1, 1, Z%desc, &
-                        tmp_desc(2))
-          call mp_sum(Z%dat, intra_pool_comm)
-          if (me_image .ne. 0) Z%desc(2) = ctx_tmp  
-        endif
+    abstol = 2.d0*PDLAMCH(A%desc(2), 'U')
+
+    if (present(B) .and. .not. factored) then
+      call cholesky(B)
+    endif
+
+    if (present(B)) then
+      allocate(work(1))
+      call PZHENGST(1, 'U', A%desc(4), &
+                    A%dat, 1, 1, A%desc, &
+                    B%dat, 1, 1, B%desc, &
+                    scal, work, -1, ierr)
+      lwork = work(1); deallocate(work); allocate(work(lwork)) 
+      call PZHENGST(1, 'U', A%desc(4), &
+                    A%dat, 1, 1, A%desc, &
+                    B%dat, 1, 1, B%desc, &
+                    scal, work, lwork, ierr)
+      if (ierr /= 0) write(*,*) "zhengst error: ", ierr
+      deallocate(work)
+    endif
+
+    allocate(ifail(A%desc(3)))
+    allocate(iclustr(2*A%nprow*A%npcol), gap(A%nprow*A%npcol))
+    allocate(work(1), rwork(1), iwork(1))
+    CALL pzheevx('V', 'I', 'U', A%desc(3), &
+                 A%dat, 1, 1, A%desc, &
+                 0, 0, 1, num, &
+                 abstol, ne_out, nv_out, W, &
+                 -1.d0, &
+                 ztmp, 1, 1, tmp_desc, &
+                 work, -1, rwork, -1, iwork, -1, &
+                 ifail, iclustr, gap, ierr)
+    lwork = work(1); deallocate(work); allocate(work(lwork))
+    lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
+    liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
+    CALL pzheevx('V', 'I', 'U', A%desc(3), &
+                 A%dat, 1, 1, A%desc, &
+                 0, 0, 1, num, &
+                 abstol, ne_out, nv_out, W, &
+                 -1.d0, &
+                 ztmp, 1, 1, tmp_desc, &
+                 work, lwork, rwork, lrwork, iwork, liwork, &
+                 ifail, iclustr, gap, ierr)
+    if (ierr /= 0) write(*,*) "pzheevx error: ", ierr
+    if (present(B)) then
+      call PZTRSM('L', 'U', 'N', 'N', A%desc(3), ne_out, one, &
+                  B%dat, 1, 1, B%desc, &
+                  ztmp, 1, 1, tmp_desc)
+      if (scal .ne. one) call dscal(A%desc(3), scal, W, 1)
+    endif
+
+    if (use_tmp) then
+      if ( Z%scope == 1 .and. A%scope == 3 ) then
+        Z%dat = 0.d0
+        ctx_tmp = Z%desc(2)
+        if (me_image .ne. 0) Z%desc(2) = -1
+        call pzgemr2d(A%desc(3), num, &
+                      ztmp,  1, 1, tmp_desc, &
+                      Z%dat, 1, 1, Z%desc, &
+                      tmp_desc(2))
+        call mp_sum(Z%dat, intra_pool_comm)
+        Z%desc(2) = ctx_tmp  
+      else
+        call pzgemr2d(A%desc(3), num, &
+                      ztmp, 1, 1, tmp_desc, &
+                      Z%dat, 1, 1, Z%desc, &
+                      tmp_desc(2))
       endif
     endif
 
@@ -476,5 +520,13 @@ module srb_matrix
                      B%dat, 1, 1, B%desc, &
                zero, C%dat, Ci, 1, C%desc)
   end subroutine parallel_inner
+
+  subroutine cholesky(A)
+    implicit none
+    type(dmat), intent(inout) :: A
+    integer :: ierr
+    call PZPOTRF('U', A%desc(4), A%dat, 1,1, A%desc, ierr)
+    if (ierr /= 0) write(*,*) "zpotrf error: ", ierr
+  end subroutine cholesky
 
 end module srb_matrix

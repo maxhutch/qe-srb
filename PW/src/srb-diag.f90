@@ -9,10 +9,9 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
   ! Diagonalizes a Hermitian matrix, providing eigenvalues and eigenvectors
   USE kinds, ONLY: DP
   use srb_types, only : kproblem
-  use srb_matrix, only : dmat, print_dmat
+  use srb_matrix, only : dmat, print_dmat, diag
   USE constants,        ONLY : pi
 
-  USE scalapack_mod, only : scalapack_diag, nprow, npcol, ctx_sq, desc_sq
   use control_flags, only : ethr
   USE mp_global,        ONLY : intra_bgrp_comm, intra_pool_comm
   USE mp,               ONLY : mp_sum, mp_barrier
@@ -53,12 +52,13 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
   real(dp),external :: DLAMCH, dznrm2
   complex(DP), external :: ZDOTC
 
-  n = Hk%H%desc(3)
+  n = Hk%H%m
   if (present(num_opt)) then
     num = num_opt
   else
     num = n
   end if
+
   if (.not. present(meth_opt) .or. ethr < 1.D-11) then
     meth = 0
   else
@@ -75,100 +75,13 @@ recursive SUBROUTINE diagonalize (Hk, evals, evecs, num_opt, meth_opt, P, Pinv, 
 
   select case (meth) 
   case ( 0 ) ! Direct eigen-solve
-  if (Hk%generalized) then
-    if (num > 0) then
-      allocate(ifail(n))
-      allocate(iclustr(2*Hk%H%nprow*Hk%H%npcol), gap(Hk%H%nprow*Hk%H%npcol))
-      allocate(work(1), rwork(1), iwork(1))
-      allocate(z(size(Hk%H%dat,1),size(Hk%H%dat,2)))
-      abstol = ethr
-      call pzhegvx(1, 'V', 'I', 'U', n, &
-                   Hk%H%dat, 1, 1, Hk%H%desc, &
-                   Hk%S%dat, 1, 1, Hk%S%desc, &
-                   0, 0, 1, num, &
-                   abstol, ne_out, nv_out, evals, &
-                   -1.d0, &
-                   z, 1, 1, Hk%H%desc, &
-                   work, -1, rwork, -1, iwork, -1, &
-                   ifail, iclustr, gap, ierr)
-      lwork = work(1); deallocate(work); allocate(work(lwork))
-      lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
-      liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
-
-      call PZHENGST(1, 'U', n, &
-                    Hk%H%dat, 1, 1, Hk%H%desc, &
-                    Hk%S%dat, 1, 1, Hk%S%desc, &
-                    scal, work, lwork, ierr)
-      if (ierr /= 0) write(*,*) "zhengst error: ", ierr
-      CALL pzheevx('V', 'I', 'U', n, &
-                  Hk%H%dat, 1, 1, Hk%H%desc, &
-                  0, 0, 1, num, &
-                  abstol, ne_out, nv_out, evals, &
-                  -1.d0, &
-                  z, 1, 1, Hk%H%desc, &
-                  work, lwork, rwork, lrwork, iwork, liwork, &
-                  ifail, iclustr, gap, ierr)
-      if (ne_out /= num) write(*,*) "found ", ne_out, "expected", num
-      if (ierr /= 0) write(*,*) "zheevx error: ", ierr
-      call PZTRSM( 'L', 'U', 'N', 'N', n, ne_out, one, &
-                   Hk%S%dat, 1, 1, Hk%S%desc, &
-                   z, 1, 1, Hk%H%desc)
-      if (scal .ne. one) call dscal(n, scal, evals, 1)
-
-      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc(2))
-      deallocate(z)
-      deallocate(work, rwork, iwork)
-      deallocate(ifail, iclustr, gap)
+    if (Hk%generalized) then
+      call diag(Hk%H, evals, evecs, Hk%S, num, .true.) 
     else
-      lwork = 2*n
-      allocate(work(lwork), rwork(3*n))
-      call ZHEGV(1, 'V', 'U', n, &
-                 Hk%H, n, &
-                 Hk%S, n, &
-                 evals, work, lwork, rwork, ierr)
-      if (ierr /= 0) write(*,*) "zhegv error: ", ierr
-      evecs%dat = Hk%H%dat(:,1:num)
-      deallocate(work)
+      call diag(Hk%H, evals, evecs, num_in = num) 
     endif
-  else
-    if (num == 0) then
-      lwork = 2*n
-      allocate(work(lwork), rwork(3*n))
-      CALL ZHEEV('N', 'U', n, Hk%H%dat, n, evals, work, lwork, rwork, ierr) 
-      evecs%dat = Hk%H%dat(:,1:num)
-      deallocate(work, rwork)
-    else
-      allocate(ifail(n))
-      allocate(z(size(Hk%H%dat,1),size(Hk%H%dat,2)))
-      allocate(iclustr(2*Hk%H%nprow*Hk%H%npcol), gap(Hk%H%nprow*Hk%H%npcol))
-      allocate(work(1), rwork(1), iwork(1))
-      abstol = ethr
-      CALL pzheevx('V', 'I', 'U', n, &
-                  Hk%H%dat, 1, 1, Hk%H%desc, &
-                  0, 0, 1, num, &
-                  abstol, ne_out, nv_out, evals, &
-                  -1.d0, &
-                  z, 1, 1, Hk%H%desc, &
-                  work, -1, rwork, -1, iwork, -1, &
-                  ifail, iclustr, gap, ierr) 
-      lwork = work(1); deallocate(work); allocate(work(lwork))
-      lrwork = rwork(1); deallocate(rwork); allocate(rwork(lrwork))
-      liwork = iwork(1); deallocate(iwork); allocate(iwork(liwork))
-      CALL pzheevx('V', 'I', 'U', n, &
-                  Hk%H%dat, 1, 1, Hk%H%desc, &
-                  0, 0, 1, num, &
-                  abstol, ne_out, nv_out, evals, &
-                  -1.d0, &
-                  z, 1, 1, Hk%H%desc, &
-                  work, lwork, rwork, lrwork, iwork, liwork, &
-                  ifail, iclustr, gap, ierr) 
-      call pzgemr2d(n, num, z, 1, 1, Hk%H%desc, evecs%dat, 1, 1, evecs%desc, Hk%H%desc(2))
-      deallocate(z)
-      deallocate(ifail, iclustr, gap)
-      deallocate(work, rwork, iwork)
-    end if
-  end if
-  return
+    return
+
 #if 0
   case ( 2 ) ! Block Davidson
   num2 = n

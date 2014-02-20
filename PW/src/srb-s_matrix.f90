@@ -2,11 +2,10 @@ subroutine build_s_matrix(pp, q, Hk)
   USE kinds, ONLY : DP
 
   use srb_types, only : pseudop, kproblem
-  use srb_matrix, only : block_outer, add_diag
+  use srb_matrix, only : block_outer, add_diag, cholesky
   USE uspp, only : nkb, qq
   use uspp_param, only : nh, nhm
   use ions_base, only : nat, ityp, nsp
-  use scalapack_mod, only : scalapack_localindex
   use buffers, only : open_buffer, save_buffer, get_buffer, close_buffer
   use mp_global, only : nproc_pot
 
@@ -87,8 +86,7 @@ subroutine build_s_matrix(pp, q, Hk)
 #endif
 
   ! factorize for future use in eigensolve
-  call PZPOTRF('U', nbasis, Hk%S%dat, 1,1,Hk%S%desc, ierr)
-  if (ierr /= 0) write(*,*) "zpotrf error: ", ierr
+  call cholesky(Hk%S)
 
   call save_buffer(Hk%S%dat, size(Hk%S%dat), pp%s_unit, -q)
 
