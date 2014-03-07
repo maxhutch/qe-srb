@@ -80,8 +80,12 @@ module funct
   character (len=25) :: dft = 'not set'
   character (len=6)  :: dft_shortname = ' '
   !
-  ! dft is the exchange-correlation functional, described by
-  ! one of the following keywords ("dft_shortname"):
+  ! "dft" is the exchange-correlation functional label, described either 
+  ! by short names listed below, or by a series of keywords (everything
+  ! is case-insensitive). "dft_shortname" contains one of the short names
+  ! listed below (deduced from from "dft" as read from input or PP files)
+  !
+  !           short name       complete name       Short description
   !              "pz"    = "sla+pz"            = Perdew-Zunger LDA
   !              "bp"    = "b88+p86"           = Becke-Perdew grad.corr.
   !              "pw91"  = "sla+pw+ggx+ggc"    = PW91 (aka GGA)
@@ -104,13 +108,13 @@ module funct
   !              "b3lyp" = "b3lp+vwn+b3lp+b3lp"= B3LYP
   !              "vdw-df"= "sla+pw+rpb+vdw1"   = vdW-DF
   !              "vdw-df2"="sla+pw+rw86+vdw2"  = vdW-DF2
-  !              "vdw-df-c09"="sla+pw+c09x+vdw1"
-  !              "vdw-df2-c09"="sla+pw+c09x+vdw2"
+  !              "vdw-df-c09"="sla+pw+c09x+vdw1"  = vdW-DF-C09
+  !              "vdw-df2-c09"="sla+pw+c09x+vdw2" = vdW-DF2-C09
   !              "vdw-df3"="sla+pw+obk8+vdw1"  = vdW-DF3
   !              "vdw-df4"="sla+pw+ob86+vdw1"  = vdW-DF4
   !              "optbk88"="sla+pw+obk8"       = optB88
-  ! or by any nonconflicting combination of the following keywords
-  ! (case-insensitive):
+  !
+  ! Any nonconflicting combination of the following keywords is acceptable:
   !
   ! Exchange:    "nox"    none                           iexch=0
   !              "sla"    Slater (alpha=2/3)             iexch=1 (default)
@@ -132,8 +136,7 @@ module funct
   !              "obz"    Ortiz-Ballone form for PZ      icorr=7
   !              "obw"    Ortiz-Ballone form for PW      icorr=8
   !              "gl"     Gunnarson-Lunqvist             icorr=9
-  !              "b3lp"   B3LYP (same as "vwn")          icorr=10
-  !              "kzk"    Finite-size corrections        icorr=11
+  !              "kzk"    Finite-size corrections        icorr=10
   !
   ! Gradient Correction on Exchange:
   !              "nogx"   none                           igcx =0 (default)
@@ -182,6 +185,10 @@ module funct
   !              "vdw1"   vdW-DF1                        inlc =1
   !              "vdw2"   vdW-DF2                        inlc =2
   !              "vv10"   rVV10                          inlc =3  
+  !
+  ! Note: as a rule, all keywords should be unique, and should be different
+  ! from the short name, but there are a few exceptions.
+  !
   ! References:
   !              pz      J.P.Perdew and A.Zunger, PRB 23, 5048 (1981) 
   !              vwn     S.H.Vosko, L.Wilk, M.Nusair, Can.J.Phys. 58,1200(1980)
@@ -272,14 +279,14 @@ module funct
   !
   ! data
   integer :: nxc, ncc, ngcx, ngcc, ncnl
-  parameter (nxc = 8, ncc =11, ngcx =24, ngcc = 12, ncnl=3)
+  parameter (nxc = 8, ncc =10, ngcx =24, ngcc = 12, ncnl=3)
   character (len=4) :: exc, corr
   character (len=4) :: gradx, gradc, nonlocc
   dimension exc (0:nxc), corr (0:ncc), gradx (0:ngcx), gradc (0: ngcc), nonlocc (0: ncnl)
 
   data exc / 'NOX', 'SLA', 'SL1', 'RXC', 'OEP', 'HF', 'PB0X', 'B3LP', 'KZK' /
   data corr / 'NOC', 'PZ', 'VWN', 'LYP', 'PW', 'WIG', 'HL', 'OBZ', &
-              'OBW', 'GL' , 'B3LP', 'KZK' /
+              'OBW', 'GL' , 'KZK' /
 
   data gradx / 'NOGX', 'B88', 'GGX', 'PBX',  'RPB', 'HCTH', 'OPTX',&
                'TPSS', 'PB0X', 'B3LP','PSX', 'WCX', 'HSE', 'RW86', 'PBE', &
@@ -334,7 +341,7 @@ CONTAINS
 
     !
     ! ----------------------------------------------
-    ! FIRST WE CHECK ALL THE SPECIAL NAMES
+    ! FIRST WE CHECK ALL THE SHORT NAMES
     ! Note: comparison is now done via exact matching
     !       not using function "matches"
     ! ----------------------------------------------
@@ -781,7 +788,7 @@ CONTAINS
                                   exx_fraction = 0.2_DP
     ishybrid = ( exx_fraction /= 0.0_DP )
 
-    has_finite_size_correction = ( iexch==8 .or. icorr==11)
+    has_finite_size_correction = ( iexch==8 .or. icorr==10)
 
     return
   end subroutine set_auxiliary_flags
@@ -1073,8 +1080,7 @@ CONTAINS
      shortname_ = 'GAUPBE'
   else if (iexch_==1.and.icorr_==4.and.igcx_==11.and.igcc_==4) then
      shortname_ = 'WC'
-  else if (iexch_==7.and.(icorr_==10.or.icorr_==2).and.igcx_==9.and. &
-           igcc_==7) then
+  else if (iexch_==7.and.icorr_==2.and.igcx_==9.and. igcc_==7) then
      shortname_ = 'B3LYP'
   else if (iexch_==0.and.icorr_==3.and.igcx_==6.and.igcc_==3) then
      shortname_ = 'OLYP'
@@ -1212,9 +1218,7 @@ subroutine xc (rho, ex, ec, vx, vc)
      call pw (rs, 2, ec, vc)
   elseif (icorr == 9) then
      call gl (rs, ec, vc)
-  elseif (icorr ==10) then ! b3lyp
-     call vwn (rs, ec, vc)
-  elseif (icorr ==11) then
+  elseif (icorr ==10) then
      if (.NOT. finite_size_cell_volume_set) call errore ('XC',&
           'finite size corrected correlation used w/o initialization',1)
      call pzKZK (rs, ec, vc, finite_size_cell_volume)

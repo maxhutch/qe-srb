@@ -112,7 +112,9 @@ funct.o : xc_vdW_DF.o
 generate_function.o : cell_base.o
 generate_function.o : constants.o
 generate_function.o : fft_base.o
+generate_function.o : io_global.o
 generate_function.o : kind.o
+generate_function.o : mp.o
 generate_function.o : mp_bands.o
 griddim.o : fft_scalar.o
 griddim.o : fft_types.o
@@ -190,6 +192,8 @@ plugin_arguments.o : mp.o
 plugin_arguments.o : plugin_flags.o
 plugin_flags.o : kind.o
 plugin_flags.o : parameters.o
+plugin_variables.o : kind.o
+plugin_variables.o : parameters.o
 pseudo_types.o : kind.o
 pseudo_types.o : radial_grids.o
 ptoolkit.o : descriptors.o
@@ -197,6 +201,10 @@ ptoolkit.o : dspev_drv.o
 ptoolkit.o : kind.o
 ptoolkit.o : parallel_include.o
 ptoolkit.o : zhpev_drv.o
+qexml.o : ../iotk/src/iotk_module.o
+qexml.o : io_files.o
+qexml.o : kind.o
+qexml.o : wrappers.o
 qmmm.o : cell_base.o
 qmmm.o : constants.o
 qmmm.o : input_parameters.o
@@ -248,7 +256,7 @@ read_pseudo.o : io_global.o
 read_pseudo.o : ions_base.o
 read_pseudo.o : kind.o
 read_pseudo.o : mp.o
-read_pseudo.o : mp_world.o
+read_pseudo.o : mp_images.o
 read_pseudo.o : pseudo_types.o
 read_pseudo.o : radial_grids.o
 read_pseudo.o : read_uspp.o
@@ -343,6 +351,10 @@ uspp.o : kind.o
 uspp.o : parameters.o
 uspp.o : pseudo_types.o
 uspp.o : random_numbers.o
+wannier_gw.o : cell_base.o
+wannier_gw.o : io_global.o
+wannier_gw.o : kind.o
+wannier_gw.o : recvec.o
 wannier_new.o : kind.o
 wave_base.o : kind.o
 wave_base.o : mp.o
@@ -361,7 +373,6 @@ xc_rVV10.o : control_flags.o
 xc_rVV10.o : fft_base.o
 xc_rVV10.o : fft_interfaces.o
 xc_rVV10.o : fft_scalar.o
-xc_rVV10.o : input_parameters.o
 xc_rVV10.o : io_global.o
 xc_rVV10.o : kernel_table.o
 xc_rVV10.o : kind.o
@@ -387,7 +398,6 @@ xml_input.o : kind.o
 xml_input.o : version.o
 xml_input.o : xml_io_base.o
 xml_io_base.o : ../iotk/src/iotk_module.o
-xml_io_base.o : constants.o
 xml_io_base.o : control_flags.o
 xml_io_base.o : io_files.o
 xml_io_base.o : io_global.o

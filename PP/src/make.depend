@@ -97,6 +97,7 @@ bgw2pw.o : ../../Modules/mp_global.o
 bgw2pw.o : ../../Modules/mp_pools.o
 bgw2pw.o : ../../Modules/mp_world.o
 bgw2pw.o : ../../Modules/parallel_include.o
+bgw2pw.o : ../../Modules/qexml.o
 bgw2pw.o : ../../Modules/recvec.o
 bgw2pw.o : ../../Modules/wavefunctions.o
 bgw2pw.o : ../../Modules/xml_io_base.o
@@ -538,8 +539,6 @@ pw_export.o : ../../PW/src/pwcom.o
 pw_export.o : ../../PW/src/start_k.o
 pw_export.o : ../../PW/src/symm_base.o
 pw_export.o : ../../iotk/src/iotk_module.o
-qexml.o : ../../iotk/src/iotk_module.o
-qexml_example.o : qexml.o
 smallgk.o : ../../Modules/kind.o
 spinsym.o : ../../Modules/kind.o
 spinsym.o : ../../PW/src/symm_base.o
@@ -573,7 +572,7 @@ sym_band.o : ../../Modules/ions_base.o
 sym_band.o : ../../Modules/kind.o
 sym_band.o : ../../Modules/mp.o
 sym_band.o : ../../Modules/mp_global.o
-sym_band.o : ../../Modules/mp_world.o
+sym_band.o : ../../Modules/mp_images.o
 sym_band.o : ../../Modules/noncol.o
 sym_band.o : ../../Modules/recvec.o
 sym_band.o : ../../Modules/uspp.o

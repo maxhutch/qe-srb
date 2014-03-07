@@ -105,6 +105,7 @@ SUBROUTINE iosys()
   USE martyna_tuckerman, ONLY: do_comp_mt
 #ifdef __ENVIRON
   USE environ_base, ONLY : environ_base_init
+  USE environ_init, ONLY : environ_initions_allocate
 #endif
   !
   USE esm,           ONLY: do_comp_esm, &
@@ -241,16 +242,21 @@ SUBROUTINE iosys()
   !
   ! ... ENVIRON namelist
   !
-  USE environ_input, ONLY : verbose, environ_thr, environ_type,      &
+  USE environ_input, ONLY :    verbose, environ_thr, environ_type,      &
                                stype, rhomax, rhomin, tbeta,            &
                                env_static_permittivity, eps_mode,       &
+                               env_optical_permittivity,                &
                                solvationrad, atomicspread, add_jellium, &
                                ifdtype, nfdpoint,                       &
                                mixtype, ndiis, mixrhopol, tolrhopol,    &
                                env_surface_tension, delta,              &
                                env_pressure,                            &
-                               env_ioncc_concentration, zion, rhopb,    &
-                               solvent_temperature
+                               env_ioncc_level, nrep, cion, zion, rhopb,&
+                               solvent_temperature,                     &
+                               env_extcharge_n, extcharge_origin,       &
+                               extcharge_dim, extcharge_axis,           &
+                               extcharge_pos, extcharge_spread,         &
+                               extcharge_charge
 #endif
   !
   ! ... ELECTRONS namelist
@@ -1278,14 +1284,19 @@ SUBROUTINE iosys()
   CALL environ_base_init ( do_environ, assume_isolated,                &
                            verbose, environ_thr, environ_type,         &
                            stype, rhomax, rhomin, tbeta,               &
-                           env_static_permittivity, eps_mode,          &
+                           env_static_permittivity,                    &
+                           env_optical_permittivity, eps_mode,         &
                            solvationrad(1:ntyp), atomicspread(1:ntyp), &
                            add_jellium, ifdtype, nfdpoint,             &
                            mixtype, ndiis, mixrhopol, tolrhopol,       &
                            env_surface_tension, delta,                 &
                            env_pressure,                               &
-                           env_ioncc_concentration, zion, rhopb,       &
-                           solvent_temperature )
+                           env_ioncc_level, nrep, cion, zion, rhopb,   &
+                           solvent_temperature,                        &
+                           env_extcharge_n, extcharge_origin,          & 
+                           extcharge_dim, extcharge_axis,              &
+                           extcharge_pos, extcharge_spread,            & 
+                           extcharge_charge )
   !
   IF ( do_environ ) CALL environ_initions_allocate( nat_, ntyp )
   !
@@ -1478,12 +1489,12 @@ SUBROUTINE read_cards_pw ( psfile, tau_format )
   USE input_parameters,   ONLY : atom_label, atom_pfile, atom_mass, taspc, &
                                  tapos, rd_pos, atomic_positions, if_pos,  &
                                  sp_pos, f_inp, rd_for, tavel, sp_vel, rd_vel
-  USE dynamics_module,    ONLY : tavel_ => tavel, vel
+  USE dynamics_module,    ONLY : vel
   USE cell_base,          ONLY : at, ibrav
   USE ions_base,          ONLY : nat, ntyp => nsp, ityp, tau, atm, extfor
   USE fixed_occ,          ONLY : tfixed_occ, f_inp_ => f_inp
   USE ions_base,          ONLY : if_pos_ =>  if_pos, amass, fixatom
-  USE control_flags,      ONLY : lfixatom, textfor
+  USE control_flags,      ONLY : lfixatom, textfor, tv0rd
   !
   IMPLICIT NONE
   !
@@ -1531,8 +1542,8 @@ SUBROUTINE read_cards_pw ( psfile, tau_format )
   IF ( tavel .AND. ANY ( sp_pos(:) /= sp_vel(:) ) ) &
       CALL errore("cards","list of species in block ATOMIC_VELOCITIES &
                  & must be identical to those in ATOMIC_POSITIONS",1)
-  tavel_ = tavel
-  IF ( tavel_ ) THEN
+  tv0rd = tavel
+  IF ( tv0rd ) THEN
      ALLOCATE( vel(3, nat) )
      DO ia = 1, nat
         vel(:,ia) = rd_vel(:,ia)

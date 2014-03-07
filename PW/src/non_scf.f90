@@ -14,7 +14,7 @@
   !
   USE kinds,                ONLY : DP
   USE constants,            ONLY : rytoev
-  USE bp,                   ONLY : lelfield, lberry, lorbm
+  USE bp,                   ONLY : lelfield, lberry, lorbm, lcalc_z2
   USE check_stop,           ONLY : stopped_by_user
   USE control_flags,        ONLY : io_level, conv_elec
   USE ener,                 ONLY : ef
@@ -80,10 +80,16 @@
   !
   CALL poolrecover( et, nbnd, nkstot, nks )
   !
-  ! ... calculate weights of Kohn-Sham orbitals 
+  ! ... calculate weights of Kohn-Sham orbitals (only weights, not Ef,
+  ! ... for a "bands" calculation where Ef is read from data file)
   ! ... may be needed in further calculations such as phonon
   !
-  CALL weights (nks, nkstot, wk, xk, et, wg, eband )
+  !
+  IF ( lbands ) THEN
+     CALL weights_only  ( )
+  ELSE
+     CALL weights (nks, nkstot, wk, xk, et, wg, eband )
+  ENDIF
   !
   ! ... Note that if you want to use more k-points for the phonon
   ! ... calculation then those needed for self-consistency, you can,

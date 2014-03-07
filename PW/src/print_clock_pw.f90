@@ -22,6 +22,7 @@ SUBROUTINE print_clock_pw()
    use input_parameters,   ONLY : use_srb
 #ifdef __ENVIRON
    USE environ_base,       ONLY : do_environ
+   USE environ_info,       ONLY : environ_clock
 #endif
    !
    IMPLICIT NONE
@@ -228,6 +229,8 @@ SUBROUTINE print_clock_pw()
         CALL print_clock('PAW_keeq')
       ENDIF
    END IF
+   !
+   CALL plugin_clock()
    !
    IF ( use_srb ) THEN
       write(stdout, *)

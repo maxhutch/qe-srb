@@ -10,24 +10,6 @@
 !
 #include "f_defs.h"
 
-
-module wannier_gw
-  USE kinds, ONLY: DP
-  
-  SAVE
-  LOGICAL :: l_head!if true calculates the head of the symmetrized dielectric matrix -1
-  INTEGER :: n_gauss!number of frequency steps for head calculation
-  REAL(kind=DP) :: omega_gauss!period for frequency calculation
-  INTEGER :: grid_type!0 GL -T,T 2 GL 0 T 3 Equally spaced 0 Omega
-  INTEGER :: nsteps_lanczos!number of lanczos steps
-    !options for grid_freq=5
-  INTEGER :: second_grid_n!sub spacing for second grid
-  INTEGER :: second_grid_i!max regular step using the second grid
-  LOGICAL :: l_scissor!if true displaces occupied manifold of scissor
-  REAL(kind=DP) :: scissor!see above
-
-end module wannier_gw
-
 !
 !-----------------------------------------------------------------------
 subroutine solve_head
@@ -37,7 +19,7 @@ subroutine solve_head
   !
   USE ions_base,             ONLY : nat
   USE io_global,             ONLY : stdout, ionode,ionode_id
-  USE io_files,              ONLY : diropn,prefix, iunigk
+  USE io_files,              ONLY : diropn,prefix, iunigk, tmp_dir
   use pwcom
   USE check_stop,            ONLY : max_seconds
   USE wavefunctions_module,  ONLY : evc
@@ -483,7 +465,7 @@ subroutine solve_head
 
   if(ionode) then
      iun =  find_free_unit()
-     open( unit= iun, file=trim(prefix)//'.head', status='unknown',form='unformatted')
+     open( unit= iun, file=trim(tmp_dir)//trim(prefix)//'.head', status='unknown',form='unformatted')
      write(iun) n_gauss
      write(iun) omega_gauss
      write(iun) freqs(1:n_gauss+1)
@@ -508,7 +490,7 @@ subroutine solve_head
 
   if(ionode) then
      iun =  find_free_unit()
-     open( unit= iun, file=trim(prefix)//'.e_head', status='unknown',form='unformatted')
+     open( unit= iun, file=trim(tmp_dir)//trim(prefix)//'.e_head', status='unknown',form='unformatted')
      write(iun) n_gauss
      write(iun) omega_gauss
      write(iun) freqs(1:n_gauss+1)
@@ -536,7 +518,7 @@ subroutine solve_head
   if(ionode) close(iun)
 
  ! if(ionode) then
- !    open( unit= iun, file=trim(prefix)//'.e_head', status='old',position='rewind',form='unformatted')
+ !    open( unit= iun, file=trim(tmp_dir)//trim(prefix)////'.e_head', status='old',position='rewind',form='unformatted')
  !    read(iun) idumm
  !    read(iun) rdumm
  !    read(iun) head_tmp(1:n_gauss+1)

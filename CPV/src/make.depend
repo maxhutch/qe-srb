@@ -131,6 +131,7 @@ cp_restart.o : ../../Modules/mp_pots.o
 cp_restart.o : ../../Modules/mp_world.o
 cp_restart.o : ../../Modules/parameters.o
 cp_restart.o : ../../Modules/parser.o
+cp_restart.o : ../../Modules/qexml.o
 cp_restart.o : ../../Modules/recvec.o
 cp_restart.o : ../../Modules/run_info.o
 cp_restart.o : ../../Modules/uspp.o
@@ -441,7 +442,6 @@ init_run.o : ../../Modules/control_flags.o
 init_run.o : ../../Modules/electrons_base.o
 init_run.o : ../../Modules/fft_base.o
 init_run.o : ../../Modules/funct.o
-init_run.o : ../../Modules/input_parameters.o
 init_run.o : ../../Modules/io_files.o
 init_run.o : ../../Modules/io_global.o
 init_run.o : ../../Modules/ions_base.o

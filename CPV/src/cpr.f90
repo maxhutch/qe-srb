@@ -323,21 +323,27 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
      !
      CALL move_electrons( nfi, tfirst, tlast, bg(:,1), bg(:,2), bg(:,3), &
                           fion, c0_bgrp, cm_bgrp, phi_bgrp, &
-                          enthal, enb, enbi, fccc, ccc, dt2bye, stress )
+                          enthal, enb, enbi, fccc, ccc, dt2bye, stress, .false. )
      !
      IF (lda_plus_u) fion = fion + forceh
      !
-     ! DFT+D (Grimme) dispersion forces (factor 0.5 converts to Ha/a.u.)
+     ! DFT+D (Grimme) dispersion energy, forces (factor 0.5 converts to Ha/a.u.)
      !
      IF ( llondon ) THEN
-        ALLOCATE( usrt_tau0( 3, nat ), usrt_fion( 3, nat ) )
+        ALLOCATE( usrt_tau0( 3, nat ))
         usrt_tau0(:,:) = tau0(:,ind_bck(:))/alat
-        usrt_fion =  0.5_dp*force_london ( alat, nat,ityp, at,bg, usrt_tau0 )
-        fion(:,:) = fion(:,:) + usrt_fion(:,ind_srt(:))
+        delta_etot = 0.5_dp*energy_london (alat, nat,ityp,at,bg, usrt_tau0)
+        etot = etot + delta_etot
+        enthal=enthal+delta_etot
+        IF ( tfor ) THEN
+           ALLOCATE( usrt_fion( 3, nat ) )
+           usrt_fion =  0.5_dp*force_london ( alat, nat,ityp, at,bg, usrt_tau0 )
+           fion(:,:) = fion(:,:) + usrt_fion(:,ind_srt(:))
+           DEALLOCATE (usrt_fion)
+        END IF
         IF ( tpre ) stress = stress + 0.5_dp * stres_london ( alat , nat , &
                               ityp , at , bg , usrt_tau0 , omega )
-        DEALLOCATE (usrt_fion, usrt_tau0)
-
+        DEALLOCATE ( usrt_tau0 )
      END IF
      !
      IF ( tpre ) THEN
@@ -658,15 +664,6 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
         !
      END IF
      !
-     ! DFT+D (Grimme) dispersion contribution to energy (0.5 converts to Ha)
-     !
-     IF ( llondon ) THEN
-        ALLOCATE( usrt_tau0( 3, nat ) )
-        usrt_tau0(:,:) = tau0(:,ind_bck(:))/alat
-        etot = etot + 0.5_dp*energy_london (alat, nat,ityp,at,bg, usrt_tau0)
-        DEALLOCATE (usrt_tau0)
-     END IF
-     !
      epot = eht + epseu + exc
      !
      IF ( .NOT. tcg ) THEN
@@ -775,7 +772,7 @@ SUBROUTINE cprmain( tau_out, fion_out, etot_out )
            !
            CALL move_electrons( nfi, tfirst, tlast, bg(:,1), bg(:,2), bg(:,3),&
                                 fion, c0_bgrp, cm_bgrp, phi_bgrp, enthal, enb,&
-                                enbi, fccc, ccc, dt2bye, stress )
+                                enbi, fccc, ccc, dt2bye, stress,.true. )
            !
         END IF
         !

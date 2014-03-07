@@ -16,7 +16,7 @@
        USE io_global, ONLY : ionode_id
        USE mp, ONLY : mp_barrier, mp_bcast
        USE mp_world, ONLY : world_comm
-       USE io_files, ONLY : prefix, nwordwfc,iunwfc
+       USE io_files, ONLY : prefix, tmp_dir, nwordwfc,iunwfc
        USE wvfct,                ONLY : nbnd, et, npwx
        USE io_global,            ONLY : stdout, ionode
        USE wavefunctions_module, ONLY : evc
@@ -340,7 +340,7 @@
                     allocate(uterms(numw_prod,numw_prod))
                     if(ionode) then
                        iunuterms =  find_free_unit()
-                       open( unit= iunuterms, file=trim(prefix)//'.uterms', status='old',form='unformatted')
+                       open( unit= iunuterms, file=trim(tmp_dir)//trim(prefix)//'.uterms', status='old',form='unformatted')
                     endif
                     allocate(uterms_tmp(numw_prod))
                     do iw=1,numw_prod
@@ -604,7 +604,7 @@
              call davcio(evc,2*nwordwfc,iunwfc,is,-1)
              
              tmp_rot(:,:)=dble(u_trans(:,:,is))
-             !call rotate_wannier_gamma( tmp_rot,1,0)!DEBUG
+             call rotate_wannier_gamma( tmp_rot,1,0)
              
              if(.not.l_truncated_coulomb) call read_vg0
              call wannier_bse(is,evc,o_mat)

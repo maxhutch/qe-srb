@@ -1,20 +1,32 @@
 !
-! Copyright (C) 2001-2013 Quantum ESPRESSO group
+! Copyright (C) 2004-2007 Quantum ESPRESSO group
 ! This file is distributed under the terms of the
 ! GNU General Public License. See the file `License'
 ! in the root directory of the present distribution,
 ! or http://www.gnu.org/copyleft/gpl.txt .
 !
+!--------------------------------------------------------------------------
 !
-
-!
-!new module for wannier function support
 MODULE wannier_gw
-
+  !
+  ! ... The variables needed for gww-gwl code (head.x)
+  !
   USE kinds, ONLY: DP
-
+  !
   SAVE
-
+  !
+  !From HEAD
+  LOGICAL :: l_head=.false.!if true calculates the head of the symmetrized dielectric matrix -1
+  INTEGER :: n_gauss!number of frequency steps for head calculation
+  REAL(kind=DP) :: omega_gauss!period for frequency calculation
+  INTEGER :: grid_type!0 GL -T,T 2 GL 0 T 3 Equally spaced 0 Omega
+  INTEGER :: nsteps_lanczos!number of lanczos steps
+    !options for grid_freq=5
+  INTEGER :: second_grid_n!sub spacing for second grid
+  INTEGER :: second_grid_i!max regular step using the second grid
+  LOGICAL :: l_scissor!if true displaces occupied manifold of scissor
+  REAL(kind=DP) :: scissor!see above
+  !From pw4gww
   TYPE real_matrix_pointer
      REAL(kind=DP), DIMENSION(:,:), POINTER :: p
   END TYPE real_matrix_pointer
@@ -53,9 +65,9 @@ MODULE wannier_gw
 
 
   LOGICAL :: l_gram!if true uses gram schmidt for orthonormalizing the products of wanniers
-  LOGICAL :: l_head!if true calculates the head of the symmetrized dielectric matrix -1
-  INTEGER :: n_gauss!number of frequency steps for head calculation
-  REAL(kind=DP) :: omega_gauss!period for frequency calculation
+  !LOGICAL :: l_head!if true calculates the head of the symmetrized dielectric matrix -1
+  !INTEGER :: n_gauss!number of frequency steps for head calculation
+  !REAL(kind=DP) :: omega_gauss!period for frequency calculation
   LOGICAL :: l_exchange!if true calculate the exchange terms with k-points sampling
 
 
@@ -64,7 +76,7 @@ MODULE wannier_gw
   LOGICAL :: l_wing!if .true. calculate also the wing terms, it requires the file .e_head
 
 
-  INTEGER :: grid_type!0 GL -T,T 2 GL 0 T 3 Equally spaced 0 Omega
+  !INTEGER :: grid_type!0 GL -T,T 2 GL 0 T 3 Equally spaced 0 Omega
 
 
   INTEGER :: nset_overlap!number of states to be read  written from/to file simultaneously, when
@@ -182,8 +194,8 @@ MODULE wannier_gw
   INTEGER :: n_list(2)!number of states in list for the 2 spin channels
   INTEGER, ALLOCATABLE :: i_list(:,:) !list of KS states to be computed 
 
-  LOGICAL :: l_scissor! if true uses a scissor
-  REAL(kind=DP) :: scissor!value for scissor in eV
+  !LOGICAL :: l_scissor! if true uses a scissor
+  !REAL(kind=DP) :: scissor!value for scissor in eV
   LOGICAL :: l_full!if true prepare data for further post-processing for a full-relativistic calculation
   INTEGER :: n_full!numeber of proper relativistic states in G of GW
 
@@ -233,9 +245,5 @@ MODULE wannier_gw
 end subroutine max_ngm_set
           
  
-   
 
 END MODULE wannier_gw
-
-
-

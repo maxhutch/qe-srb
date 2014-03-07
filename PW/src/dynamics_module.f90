@@ -41,7 +41,6 @@ MODULE dynamics_module
          ndof,        &! the number of degrees of freedom
          num_accept=0  ! Number of the accepted proposal in Smart_MC
    LOGICAL :: &
-         tavel=.FALSE.,&! if true, starting velocities were read from input
          vel_defined,  &! if true, vel is used rather than tau_old to do the next step
          control_temp, &! if true a thermostat is used to control the temperature
          refold_pos,   &! if true the positions are refolded into the supercell
@@ -126,7 +125,7 @@ CONTAINS
       USE ener,           ONLY : etot
       USE force_mod,      ONLY : force, lstres
       USE control_flags,  ONLY : istep, nstep, conv_ions, lconstrain, &
-                                 lfixatom
+                                 lfixatom, tv0rd
       !
       USE constraints_module, ONLY : nconstr, check_constraint
       USE constraints_module, ONLY : remove_constr_force, remove_constr_vec
@@ -160,13 +159,7 @@ CONTAINS
          !
       ENDIF
       !
-      vel(:,:)     = 0.D0
-      vel_defined  = .true. ! by default use vel==0 as starting point
-      ! not sure why the next 3 arrays were set to 0/0 ... maybe it
-      ! was just a check. The following should do the job.
-      tau_old(:,:) = 1.0D30
-      tau_new(:,:) = 1.0D30
-      acc(:,:)     = 1.0D30
+      vel_defined  = .true.
       temp_av      = 0.D0
       !
       CALL seqopn( 4, 'md', 'FORMATTED', file_exists )
@@ -503,7 +496,7 @@ CONTAINS
             !
          ENDDO
          !
-         IF ( tavel ) THEN ! initial velocities available from input file
+         IF ( tv0rd ) THEN ! initial velocities available from input file
             !
             vel(:,:) = vel(:,:) / alat
             !

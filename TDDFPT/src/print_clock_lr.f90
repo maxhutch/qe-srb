@@ -20,6 +20,10 @@ SUBROUTINE print_clock_lr()
    USE mp_world,         ONLY : mpime, root
    USE realus,           ONLY : real_space,real_space_debug
    use lr_variables,     only : davidson
+#ifdef __ENVIRON
+   USE environ_base,     ONLY : do_environ
+   USE environ_info,     ONLY : environ_clock
+#endif   
    !
    IMPLICIT NONE
    !
@@ -123,6 +127,10 @@ SUBROUTINE print_clock_lr()
    !CALL print_clock( 'poolreduce' )
    CALL print_clock ('mp_sum')
     WRITE( stdout, * )
+#endif
+   !
+#ifdef __ENVIRON
+   IF ( do_environ ) CALL environ_clock( stdout )
 #endif
    !
    WRITE( stdout, '(5X,"EXX routines")' )
