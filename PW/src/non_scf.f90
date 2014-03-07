@@ -16,7 +16,7 @@
   USE constants,            ONLY : rytoev
   USE bp,                   ONLY : lelfield, lberry, lorbm, lcalc_z2
   USE check_stop,           ONLY : stopped_by_user
-  USE control_flags,        ONLY : io_level, conv_elec
+  USE control_flags,        ONLY : io_level, conv_elec, lbands
   USE ener,                 ONLY : ef
   USE io_global,            ONLY : stdout, ionode
   USE io_files,             ONLY : iunwfc, nwordwfc, iunefield

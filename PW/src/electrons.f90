@@ -385,6 +385,7 @@ SUBROUTINE electrons_scf ( no_printout )
   ! ... external functions
   !
   REAL(DP), EXTERNAL :: ewald, get_clock
+  logical, save :: skip
   !
   iter = 0
   dr2  = 1.0_dp
