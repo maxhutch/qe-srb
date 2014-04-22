@@ -318,6 +318,10 @@ SUBROUTINE build_basis (evc_in, opt_basis, ecut_srb )
   endif
   if (me_pool == 0) then
     write(*,'(5X,A,I7,A,I7,A,F10.6,A)') "Made basis: ", nbasis_trunc, " of ", nks*nbnd, " elements (", abs(ptrace)*100, "% error)"
+    if (nbasis_trunc / nks*nbnd > 0.9) then
+      write(*,'(A,F5.1,A)') "WARNING! truncation removed only ", 100.*(nks*nbnd - nbasis_trunc)/(nks*nbnd), "% of degrees of freedom."
+      write(*,'(A)') "Consider increasing the number of q-points to improve statistics"
+    endif
   endif
   !=============================
   ! Express the basis in the gamma-point pw basis <G|B>
