@@ -69,10 +69,10 @@ subroutine transform_rho(rho_srb, opt_basis, rho)
   do i = 1, nbasis
   trace = trace + abs(rho_srb(spin)%dat(i,i))
   enddo
+  call start_clock('  svd')
   call mp_sum(rho_srb(spin)%dat, inter_pot_comm)
   call distribute(rho_srb(spin), rho_big, my_pot_id)
 
-  call start_clock('  svd')
   call diag(rho_big, S, sv)
   call stop_clock('  svd')
 
